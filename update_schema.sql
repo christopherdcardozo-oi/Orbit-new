@@ -1,0 +1,15 @@
+ALTER TABLE profiles 
+ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT 'planet',
+ADD COLUMN IF NOT EXISTS gender TEXT,
+ADD COLUMN IF NOT EXISTS custom_gender TEXT,
+ADD COLUMN IF NOT EXISTS personality TEXT[] DEFAULT '{}';
+
+CREATE OR REPLACE FUNCTION delete_my_account()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  DELETE FROM auth.users WHERE id = auth.uid();
+END;
+$$;
