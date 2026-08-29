@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native'
 import { registerForPushNotificationsAsync, savePushToken } from '../lib/notifications'
+import { ThemeProvider, DarkTheme } from '@react-navigation/native'
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
@@ -65,12 +66,23 @@ export default function RootLayout() {
     )
   }
 
+  // Define a custom dark theme that uses transparent background so the cosmic background shines through
+  const CustomDarkTheme = {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      background: 'transparent',
+    },
+  };
+
   return (
-    <View style={styles.rootContainer}>
-      <View style={[styles.appContainer, isWeb && styles.webContainer]}>
-        <Slot />
+    <ThemeProvider value={CustomDarkTheme}>
+      <View style={styles.rootContainer}>
+        <View style={[styles.appContainer, isWeb && styles.webContainer]}>
+          <Slot />
+        </View>
       </View>
-    </View>
+    </ThemeProvider>
   )
 }
 

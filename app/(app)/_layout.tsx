@@ -1,33 +1,30 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import CosmicBackground from '../../components/CosmicBackground';
-import { View } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 
 export default function AppLayout() {
   return (
-    <View style={{ flex: 1, backgroundColor: '#030712' }}>
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <CosmicBackground />
       <Tabs
         sceneContainerStyle={{ backgroundColor: 'transparent' }}
         screenOptions={{
           headerShown: false,
-          tabBarStyle: {
-            backgroundColor: 'rgba(3, 7, 18, 0.9)',
-            borderTopColor: '#1f2937',
-            borderTopWidth: 1,
-            position: 'absolute',
-            elevation: 0,
-          },
-          tabBarActiveTintColor: '#a855f7',
+          tabBarStyle: styles.tabBar,
+          tabBarActiveTintColor: '#c084fc',
           tabBarInactiveTintColor: '#6b7280',
+          tabBarShowLabel: false,
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
             title: 'Chat',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="chatbubbles" size={size} color={color} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={[styles.iconContainer, focused && styles.activeIcon]}>
+                <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={size + 4} color={color} />
+              </View>
             ),
           }}
         />
@@ -35,8 +32,10 @@ export default function AppLayout() {
           name="profile"
           options={{
             title: 'Profile',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person" size={size} color={color} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={[styles.iconContainer, focused && styles.activeIcon]}>
+                <Ionicons name={focused ? "person" : "person-outline"} size={size + 4} color={color} />
+              </View>
             ),
           }}
         />
@@ -44,3 +43,31 @@ export default function AppLayout() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: 'rgba(17, 24, 39, 0.85)',
+    borderTopWidth: 0,
+    position: 'absolute',
+    elevation: 0,
+    height: Platform.OS === 'ios' ? 88 : 70,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    // Web-specific backdrop blur (if supported)
+    ...(Platform.OS === 'web' ? { backdropFilter: 'blur(10px)' } : {}),
+  },
+  iconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 20,
+  },
+  activeIcon: {
+    backgroundColor: 'rgba(192, 132, 252, 0.15)',
+  }
+});
