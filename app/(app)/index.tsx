@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: 'transparent',
+    backgroundColor: '#030712',
   },
   radarContainer: {
     width: 240,

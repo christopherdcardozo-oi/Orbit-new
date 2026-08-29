@@ -136,9 +136,9 @@ export default function ProfileTabScreen() {
   }
 
   return (
-    <>
+    <View style={styles.container}>
       <CosmicBackground />
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingVertical: 60, paddingHorizontal: 16 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 60, paddingHorizontal: 16 }}>
         
         {/* Header Section */}
         <View style={styles.header}>
@@ -273,7 +273,7 @@ export default function ProfileTabScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#030712' },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { alignItems: 'center', marginBottom: 32, position: 'relative' },
   settingsIcon: { position: 'absolute', top: 0, right: 10, padding: 8 },
@@ -285,8 +285,8 @@ const styles = StyleSheet.create({
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },
   pickerContainer: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderRadius: 12, borderWidth: 1, borderColor: '#374151', overflow: 'hidden' },
-  picker: { color: '#fff', backgroundColor: 'transparent' },
-  pickerItem: { color: '#fff', backgroundColor: 'transparent' },
+  picker: { color: '#fff', backgroundColor: '#030712' },
+  pickerItem: { color: '#fff', backgroundColor: '#030712' },
   avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
   avatarOption: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1f2937', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
   avatarOptionSelected: { borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.2)' },
