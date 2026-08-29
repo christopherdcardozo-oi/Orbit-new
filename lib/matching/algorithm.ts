@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { generateIcebreaker } from './icebreaker';
+import { sendPushNotification } from '../notifications';
 import type { Profile } from '@/types/database';
 
 export function fisherYatesShuffle<T>(array: T[]): T[] {
@@ -37,6 +38,7 @@ export async function runMatchmaking() {
     expires_at: string;
   }> = [];
   const allNewHistory: Array<{ user1_id: string; user2_id: string }> = [];
+  const notificationsToSend: Array<{ token: string, title: string, body: string }> = [];
 
   for (const domain of domains) {
     const domainProfiles = profiles.filter((p: Profile) => p.email_domain === domain);
@@ -63,7 +65,6 @@ export async function runMatchmaking() {
       }
     }
 
-    // Cooldown Decay — query for pairs >14 days old
     const fourteenDaysAgo = new Date();
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
     
@@ -80,11 +81,9 @@ export async function runMatchmaking() {
       }
     }
 
-    // Fisher-Yates shuffle
     const shuffled = fisherYatesShuffle(domainProfiles);
     const matched = new Set<string>();
 
-    // Greedy pair matching
     for (let i = 0; i < shuffled.length; i++) {
       const userA = shuffled[i];
       if (matched.has(userA.id)) continue;
@@ -107,11 +106,10 @@ export async function runMatchmaking() {
         matched.add(userA.id);
         matched.add(foundMatch.id);
         
-        // Generate icebreaker for each pair
         const icebreaker = generateIcebreaker(userA, foundMatch);
         
         const expiresAt = new Date();
-        expiresAt.setHours(24, 0, 0, 0); // Next midnight
+        expiresAt.setHours(24, 0, 0, 0); 
         
         const [user1_id, user2_id] = [userA.id, foundMatch.id].sort();
         
@@ -127,6 +125,22 @@ export async function runMatchmaking() {
           user1_id,
           user2_id,
         });
+        
+        // Queue push notifications
+        if ((userA as any).fcm_token) {
+          notificationsToSend.push({
+            token: (userA as any).fcm_token,
+            title: "New Cosmic Match! 🚀",
+            body: "You've been paired with someone new. You have 24 hours to chat!"
+          });
+        }
+        if ((foundMatch as any).fcm_token) {
+          notificationsToSend.push({
+            token: (foundMatch as any).fcm_token,
+            title: "New Cosmic Match! 🚀",
+            body: "You've been paired with someone new. You have 24 hours to chat!"
+          });
+        }
         
         results.matched++;
       } else {
@@ -150,6 +164,11 @@ export async function runMatchmaking() {
         
       if (historyInsertError) {
         results.errors.push(`Failed to insert history: ${historyInsertError.message}`);
+      } else {
+        // Send all push notifications!
+        for (const notif of notificationsToSend) {
+          await sendPushNotification(notif.token, notif.title, notif.body);
+        }
       }
     }
   }
