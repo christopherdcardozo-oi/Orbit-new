@@ -11,6 +11,7 @@ export default function AppLayout() {
         sceneContainerStyle={{ backgroundColor: 'transparent' }}
         screenOptions={{
           headerShown: false,
+          unmountOnBlur: true,
           tabBarStyle: styles.tabBar,
           tabBarActiveTintColor: '#c084fc',
           tabBarInactiveTintColor: '#6b7280',
