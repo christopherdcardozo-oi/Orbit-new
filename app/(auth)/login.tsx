@@ -18,13 +18,13 @@ export default function LoginScreen() {
 
   const handleSendCode = async () => {
     if (!fullEmail) {
-      Alert.alert('Error', 'Please enter your email.')
+      alert('Error: Please enter your email.')
       return
     }
 
     const emailStr = fullEmail.toLowerCase().trim()
     if (!emailStr.endsWith(`@${selectedUniversity}`) && !emailStr.endsWith('@gmail.com')) {
-      Alert.alert('Invalid Email', `You must use your @${selectedUniversity} email or your Resend verified @gmail.com`)
+      alert(`Invalid Email: You must use your @${selectedUniversity} email or your Resend verified @gmail.com`)
       return
     }
 
@@ -34,7 +34,7 @@ export default function LoginScreen() {
     })
     setLoading(false)
     if (error) {
-      Alert.alert('Detailed Error', JSON.stringify(error, null, 2))
+      alert(`Error: ${error.message}`)
     } else {
       setOtpPhase(true)
     }
@@ -51,7 +51,7 @@ export default function LoginScreen() {
     })
     setLoading(false)
     if (error) {
-      Alert.alert('Detailed Error', JSON.stringify(error, null, 2))
+      alert(`Error: ${error.message}`)
     }
     // If successful, app/_layout.tsx will auto-redirect to dashboard
   }
@@ -64,7 +64,7 @@ export default function LoginScreen() {
     })
     setLoading(false)
     if (error) {
-      Alert.alert('Dev Bypass Error', error.message)
+      alert(`Error: ${error.message}`)
     }
   }
 

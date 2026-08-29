@@ -27,21 +27,21 @@ export default function SignupScreen() {
 
   const handleSendCode = async () => {
     if (!fullEmail) {
-      Alert.alert('Error', 'Please enter your email.')
+      alert('Error: Please enter your email.')
       return
     }
     if (!major.trim()) {
-      Alert.alert('Error', 'Please enter your major.')
+      alert('Error: Please enter your major.')
       return
     }
     if (gender === 'Other' && !customGender.trim()) {
-      Alert.alert('Error', 'Please enter your identity.')
+      alert('Error: Please enter your identity.')
       return
     }
 
     const emailStr = fullEmail.toLowerCase().trim()
     if (!emailStr.endsWith(`@${selectedUniversity}`) && !emailStr.endsWith('@gmail.com')) {
-      Alert.alert('Invalid Email', `You must use your @${selectedUniversity} email or your Resend verified @gmail.com`)
+      alert(`Invalid Email: You must use your @${selectedUniversity} email or your Resend verified @gmail.com`)
       return
     }
 
@@ -56,7 +56,7 @@ export default function SignupScreen() {
 
     if (exists) {
       setLoading(false)
-      Alert.alert('Account Exists', 'That email has already been used. Please log in instead.')
+      alert('Account Exists: That email has already been used. Please log in instead.')
       return
     }
 
@@ -86,7 +86,7 @@ export default function SignupScreen() {
 
     if (authError) {
       setLoading(false)
-      Alert.alert('Error', authError.message)
+      alert(`Error: ${authError.message}`)
       return
     }
 
@@ -293,6 +293,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   picker: {
+    backgroundColor: 'transparent',
     color: '#fff',
   },
   pickerItem: {
