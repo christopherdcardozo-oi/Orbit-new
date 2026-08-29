@@ -1,14 +1,12 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import CosmicBackground from '../../components/CosmicBackground';
 import { View, StyleSheet, Platform } from 'react-native';
 
 export default function AppLayout() {
   return (
-    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-      <CosmicBackground />
+    <View style={{ flex: 1, backgroundColor: '#030712' }}>
       <Tabs
-        sceneContainerStyle={{ backgroundColor: 'transparent' }}
+        sceneContainerStyle={{ backgroundColor: '#030712' }}
         screenOptions={{
           headerShown: false,
           unmountOnBlur: true,
@@ -47,7 +45,7 @@ export default function AppLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: 'rgba(17, 24, 39, 0.85)',
+    backgroundColor: 'rgba(17, 24, 39, 0.95)',
     borderTopWidth: 0,
     position: 'absolute',
     elevation: 0,
@@ -58,7 +56,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
-    // Web-specific backdrop blur (if supported)
     ...(Platform.OS === 'web' ? { backdropFilter: 'blur(10px)' } : {}),
   },
   iconContainer: {

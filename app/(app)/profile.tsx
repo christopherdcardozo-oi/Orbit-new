@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import CosmicBackground from '../../components/CosmicBackground';
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 const AVATARS = ['alien', 'alien-outline', 'rocket-launch', 'ufo', 'ufo-outline', 'planet', 'moon-waning-crescent', 'meteor', 'star-shooting', 'earth', 'satellite-variant'];
@@ -136,6 +137,7 @@ export default function ProfileTabScreen() {
 
   return (
     <>
+      <CosmicBackground />
       <ScrollView style={styles.container} contentContainerStyle={{ paddingVertical: 60, paddingHorizontal: 16 }}>
         
         {/* Header Section */}

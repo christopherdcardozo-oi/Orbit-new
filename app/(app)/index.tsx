@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import CosmicBackground from '../../components/CosmicBackground';
 
 export default function ChatTabScreen() {
   const pulseAnim = useRef(new Animated.Value(0)).current;
@@ -62,6 +63,7 @@ export default function ChatTabScreen() {
 
   return (
     <View style={styles.container}>
+      <CosmicBackground />
       <View style={styles.radarContainer}>
         <Animated.View style={[styles.pulseRing, { transform: [{ scale }], opacity }]} />
         <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }], opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] }) }]} />
