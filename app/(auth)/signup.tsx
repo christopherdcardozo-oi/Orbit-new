@@ -66,7 +66,7 @@ export default function SignupScreen() {
     
     setLoading(false)
     if (error) {
-      Alert.alert('Detailed Error', JSON.stringify(error, null, 2))
+      alert(error.message)
     } else {
       setStep(2)
     }
