@@ -268,7 +268,7 @@ export default function ProfileTabScreen() {
           </View>
         </View>
       </Modal>
-    </>
+    </View>
   );
 }
 
