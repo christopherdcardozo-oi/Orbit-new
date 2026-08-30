@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { generateIcebreaker } from './icebreaker';
 import { sendPushNotification } from '../notifications';
-import type { Profile } from '@/types/database';
+import type { Profile } from '@orbit/shared';
 
 export function fisherYatesShuffle<T>(array: T[]): T[] {
   const newArray = [...array];

@@ -1,4 +1,4 @@
-import type { Profile } from '@/types/database';
+import type { Profile } from '@orbit/shared';
 
 export function generateIcebreaker(profileA: Profile, profileB: Profile): string {
   const hobbiesA = profileA.hobbies || [];

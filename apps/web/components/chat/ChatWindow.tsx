@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { MessageBubble } from './MessageBubble';
 import { SystemMessage } from './SystemMessage';
 import { ChatInput } from './ChatInput';
-import { Message } from '@/types/database';
+import { Message } from '@orbit/shared';
 
 export interface ChatWindowProps {
   matchId: string;
