@@ -5,24 +5,82 @@ import { LinearGradient } from 'expo-linear-gradient';
 import CosmicBackground from '../../components/CosmicBackground';
 import { supabase } from '../../lib/supabase';
 
+// Matches reset at local midnight for the user's campus (see
+// expire_active_matches / the reset-matches edge function, both scheduled
+// off midnight in each university's configured timezone — see
+// supabase/migrations/005_seed_universities.sql). Computed via Intl
+// instead of a date library: ask what the wall-clock time currently reads
+// in that timezone, then how many seconds remain until it rolls to 00:00:00.
+function getSecondsUntilMidnight(timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const get = (type: string) => Number(parts.find(p => p.type === type)?.value ?? '0');
+  // hour12: false still reports the 00:00:00 instant as "24", not "00" —
+  // normalize so the math below (seconds elapsed since local midnight)
+  // treats that instant as 0, not a bogus 24-hour offset.
+  const hour = get('hour') % 24;
+  const minute = get('minute');
+  const second = get('second');
+
+  const elapsed = hour * 3600 + minute * 60 + second;
+  return 86400 - elapsed;
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+const DEFAULT_TIMEZONE = 'America/Chicago';
+
 export default function ChatTabScreen() {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
   const [displayAlias, setDisplayAlias] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
+  const [secondsLeft, setSecondsLeft] = useState(() => getSecondsUntilMidnight(DEFAULT_TIMEZONE));
 
   useEffect(() => {
-    const fetchAlias = async () => {
+    const fetchProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await supabase
+
+      const { data: profile } = await supabase
         .from('profiles')
-        .select('display_alias')
+        .select('display_alias, email_domain')
         .eq('id', user.id)
         .single();
-      if (data?.display_alias) setDisplayAlias(data.display_alias);
+
+      if (profile?.display_alias) setDisplayAlias(profile.display_alias);
+
+      if (profile?.email_domain) {
+        const { data: uni } = await supabase
+          .from('university_config')
+          .select('timezone')
+          .eq('email_domain', profile.email_domain)
+          .single();
+        if (uni?.timezone) setTimezone(uni.timezone);
+      }
     };
-    fetchAlias();
+    fetchProfile();
   }, []);
+
+  useEffect(() => {
+    setSecondsLeft(getSecondsUntilMidnight(timezone));
+    const interval = setInterval(() => {
+      setSecondsLeft(getSecondsUntilMidnight(timezone));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timezone]);
 
   useEffect(() => {
     // Pulse animation
@@ -102,6 +160,10 @@ export default function ChatTabScreen() {
         <Text style={styles.subtitle}>
           The algorithm pairs users every night at midnight. Make sure your profile is ready to enter orbit.
         </Text>
+        <View style={styles.countdownBox}>
+          <Text style={styles.countdownLabel}>Next reset in</Text>
+          <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
+        </View>
       </View>
     </View>
   );
@@ -192,5 +254,28 @@ const styles = StyleSheet.create({
     color: '#d1d5db',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  countdownBox: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(192, 132, 252, 0.2)',
+    width: '100%',
+    alignItems: 'center',
+  },
+  countdownLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  countdown: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#c084fc',
+    letterSpacing: 2,
+    fontVariant: ['tabular-nums'],
   },
 });
