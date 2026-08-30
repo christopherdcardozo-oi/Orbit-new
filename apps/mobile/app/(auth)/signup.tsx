@@ -40,12 +40,22 @@ export default function SignupScreen() {
     }
 
     const emailStr = fullEmail.toLowerCase().trim()
-    if (!emailStr.endsWith(`@${selectedUniversity}`) && !emailStr.endsWith('@gmail.com')) {
-      alert(`Invalid Email: You must use your @${selectedUniversity} email or your Resend verified @gmail.com`)
-      return
-    }
 
     setLoading(true)
+
+    // Emails matching the picked campus are always fine; anything else
+    // has to be explicitly allowlisted server-side (admin_allowlist).
+    if (!emailStr.endsWith(`@${selectedUniversity}`)) {
+      const { data: allowed, error: allowError } = await supabase.rpc(
+        'is_email_allowed',
+        { email_to_check: emailStr }
+      )
+      if (allowError || !allowed) {
+        setLoading(false)
+        alert(`Invalid Email: You must use your @${selectedUniversity} email`)
+        return
+      }
+    }
 
     // Check if email already exists
     const { data: exists, error: rpcError } = await supabase.rpc('check_email_exists', { email_to_check: emailStr })

@@ -1,0 +1,78 @@
+<!--
+  Orbit — OTP verification email.
+
+  Paste this into Supabase dashboard →
+    Auth → Email Templates → Magic Link
+  and set the Subject to:  "Your Orbit login code"
+
+  Even though this template is labeled "Magic Link" in the Supabase UI,
+  it's also what gets sent for signInWithOtp calls. We deliberately do
+  NOT include {{ .ConfirmationURL }} anywhere — this makes it a pure
+  OTP-only email (no clickable link, no deep-link fragility, one flow
+  across web + mobile).
+
+  Available variables:
+    {{ .Token }}           — the OTP code
+    {{ .Email }}           — recipient email address
+    {{ .SiteURL }}         — configured site URL
+    {{ .ConfirmationURL }} — (intentionally unused)
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Your Orbit login code</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#030712;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e5e7eb;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#030712;">
+      <tr>
+        <td align="center" style="padding:40px 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background:linear-gradient(180deg,#111827 0%,#0b1120 100%);border:1px solid #1f2937;border-radius:24px;overflow:hidden;">
+            <tr>
+              <td style="padding:48px 40px 24px 40px;text-align:center;">
+                <div style="font-size:36px;line-height:1;margin-bottom:8px;">🚀</div>
+                <h1 style="margin:0;font-size:28px;font-weight:800;letter-spacing:-0.02em;background:linear-gradient(90deg,#c084fc,#f472b6,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;color:#c084fc;">
+                  Orbit
+                </h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 8px 40px;text-align:center;">
+                <p style="margin:0;font-size:16px;color:#9ca3af;line-height:1.5;">
+                  Your one-time code is
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 40px;text-align:center;">
+                <div style="display:inline-block;padding:20px 32px;background-color:#0b1120;border:1px solid #374151;border-radius:16px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:36px;font-weight:700;letter-spacing:12px;color:#ffffff;">
+                  {{ .Token }}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 40px 32px 40px;text-align:center;">
+                <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.5;">
+                  Enter this code in the Orbit app to finish signing in.<br />
+                  It expires in 10 minutes.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 40px 40px 40px;border-top:1px solid #1f2937;text-align:center;">
+                <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
+                  Didn't try to sign in? You can safely ignore this email —<br />
+                  someone typed your address by mistake.
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:24px 0 0 0;font-size:11px;color:#4b5563;">
+            Orbit · Anonymous connections. One campus. Reset at midnight.
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
