@@ -1,0 +1,30 @@
+# deps
+node_modules/
+
+# builds
+.next/
+dist/
+build/
+.expo/
+.expo-shared/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+
+# editor
+.vscode/
+.idea/
+
+# original per-repo clones kept for reference; not part of the monorepo
+sources/
+

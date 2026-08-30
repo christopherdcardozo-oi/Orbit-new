@@ -1,0 +1,17 @@
+{
+  "name": "orbit-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web": "npm run dev --workspace=antigravity-app",
+    "web:build": "npm run build --workspace=antigravity-app",
+    "mobile": "npm run start --workspace=orbit",
+    "mobile:ios": "npm run ios --workspace=orbit",
+    "mobile:android": "npm run android --workspace=orbit",
+    "mobile:web": "npm run web --workspace=orbit"
+  }
+}
