@@ -8,9 +8,13 @@ import CosmicBackground from '../../components/CosmicBackground'
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 const GENDERS = ['Male', 'Female', 'Other'];
 
+// Only one campus is live right now — see the matching comment in
+// app/(auth)/login.tsx.
+const UNIVERSITY_LABEL = 'Iowa State University'
+
 export default function SignupScreen() {
   const router = useRouter()
-  const [selectedUniversity, setSelectedUniversity] = useState('iastate.edu')
+  const [selectedUniversity] = useState('iastate.edu')
   const [fullEmail, setFullEmail] = useState('')
   
   // Profile details
@@ -134,16 +138,9 @@ export default function SignupScreen() {
           {step === 1 ? (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Select University</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={selectedUniversity}
-                    onValueChange={(itemValue) => setSelectedUniversity(itemValue)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    <Picker.Item label="Iowa State University" value="iastate.edu" />
-                  </Picker>
+                <Text style={styles.label}>University</Text>
+                <View style={styles.lockedField}>
+                  <Text style={styles.lockedFieldText}>{UNIVERSITY_LABEL}</Text>
                 </View>
               </View>
 
@@ -294,6 +291,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontSize: 14,
     fontWeight: '500',
+  },
+  lockedField: {
+    backgroundColor: 'rgba(3, 7, 18, 0.5)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  lockedFieldText: {
+    color: '#fff',
+    fontSize: 16,
   },
   pickerContainer: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',

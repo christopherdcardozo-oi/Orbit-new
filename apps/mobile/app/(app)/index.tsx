@@ -1,12 +1,28 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import CosmicBackground from '../../components/CosmicBackground';
+import { supabase } from '../../lib/supabase';
 
 export default function ChatTabScreen() {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
+  const [displayAlias, setDisplayAlias] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchAlias = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('display_alias')
+        .eq('id', user.id)
+        .single();
+      if (data?.display_alias) setDisplayAlias(data.display_alias);
+    };
+    fetchAlias();
+  }, []);
 
   useEffect(() => {
     // Pulse animation
@@ -80,6 +96,9 @@ export default function ChatTabScreen() {
       
       <View style={styles.textContainer}>
         <Text style={styles.title}>Scanning the Cosmos</Text>
+        {displayAlias && (
+          <Text style={styles.alias}>You're floating as {displayAlias}</Text>
+        )}
         <Text style={styles.subtitle}>
           The algorithm pairs users every night at midnight. Make sure your profile is ready to enter orbit.
         </Text>
@@ -159,6 +178,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     letterSpacing: 1,
+  },
+  alias: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#c084fc',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 16,

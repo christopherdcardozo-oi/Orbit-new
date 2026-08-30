@@ -3,12 +3,18 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { Link } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import * as Linking from 'expo-linking'
-import { Picker } from '@react-native-picker/picker'
 
 import CosmicBackground from '../../components/CosmicBackground'
 
+// Only one campus is live right now, so there's nothing to pick — showing
+// it as a locked field avoids the empty/blank-looking dropdown you get
+// from a single-option <Picker> on web, and there's no way to land on the
+// wrong campus by accident. Reintroduce a real Picker here once a second
+// university goes live in university_config.
+const UNIVERSITY_LABEL = 'Iowa State University'
+
 export default function LoginScreen() {
-  const [selectedUniversity, setSelectedUniversity] = useState('iastate.edu')
+  const [selectedUniversity] = useState('iastate.edu')
   const [fullEmail, setFullEmail] = useState('')
   const [loading, setLoading] = useState(false)
   
@@ -82,16 +88,9 @@ export default function LoginScreen() {
         {!otpPhase ? (
           <>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Select University</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={selectedUniversity}
-                  onValueChange={(itemValue) => setSelectedUniversity(itemValue)}
-                  style={styles.picker}
-                  itemStyle={styles.pickerItem}
-                >
-                  <Picker.Item label="Iowa State University" value="iastate.edu" />
-                </Picker>
+              <Text style={styles.label}>University</Text>
+              <View style={styles.lockedField}>
+                <Text style={styles.lockedFieldText}>{UNIVERSITY_LABEL}</Text>
               </View>
             </View>
 
@@ -203,19 +202,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  pickerContainer: {
+  lockedField: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#374151',
-    overflow: 'hidden',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  picker: {
+  lockedFieldText: {
     color: '#fff',
-  },
-  pickerItem: {
-    color: '#fff',
-    backgroundColor: '#030712',
+    fontSize: 16,
   },
   textInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
