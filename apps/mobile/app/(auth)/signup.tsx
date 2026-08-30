@@ -3,7 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { Link, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { Picker } from '@react-native-picker/picker'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
+import { PERSONALITY_QUESTIONS } from '../../lib/personality'
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 const GENDERS = ['Male', 'Female', 'Other'];
@@ -12,21 +14,29 @@ const GENDERS = ['Male', 'Female', 'Other'];
 // app/(auth)/login.tsx.
 const UNIVERSITY_LABEL = 'Iowa State University'
 
+type Step = 'details' | 'code' | 'personality' | 'reveal'
+
 export default function SignupScreen() {
   const router = useRouter()
   const [selectedUniversity] = useState('iastate.edu')
   const [fullEmail, setFullEmail] = useState('')
-  
+
   // Profile details
   const [gender, setGender] = useState('Male')
   const [customGender, setCustomGender] = useState('')
   const [major, setMajor] = useState('')
   const [year, setYear] = useState('Freshman')
 
+  // Personality answers, one per PERSONALITY_QUESTIONS entry
+  const [personality, setPersonality] = useState<string[]>([])
+
+  // What we reveal at the end — generated server-side by the
+  // handle_new_user() trigger (see supabase/migrations/011_*).
+  const [revealAlias, setRevealAlias] = useState('')
+  const [revealAvatar, setRevealAvatar] = useState('planet')
+
   const [loading, setLoading] = useState(false)
-  
-  // Steps: 1 = Details, 2 = Code Verification
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState<Step>('details')
   const [code, setCode] = useState('')
 
   const handleSendCode = async () => {
@@ -63,7 +73,7 @@ export default function SignupScreen() {
 
     // Check if email already exists
     const { data: exists, error: rpcError } = await supabase.rpc('check_email_exists', { email_to_check: emailStr })
-    
+
     if (rpcError) {
       console.warn("RPC Error:", rpcError)
     }
@@ -77,12 +87,12 @@ export default function SignupScreen() {
     const { error } = await supabase.auth.signInWithOtp({
       email: emailStr,
     })
-    
+
     setLoading(false)
     if (error) {
       alert(error.message)
     } else {
-      setStep(2)
+      setStep('code')
     }
   }
 
@@ -90,7 +100,7 @@ export default function SignupScreen() {
     if (!code) return
     setLoading(true)
     const emailStr = fullEmail.toLowerCase().trim()
-    
+
     // Verify OTP
     const { data: authData, error: authError } = await supabase.auth.verifyOtp({
       email: emailStr,
@@ -112,30 +122,84 @@ export default function SignupScreen() {
         major,
         year_in_school: year,
       }).eq('id', authData.user.id);
-      
+
       if (updateError) {
         console.warn("Failed to update profile details:", updateError);
       }
     }
-    
+
     setLoading(false)
-    // App Layout will automatically redirect to dashboard
+    // Root layout's redirect effect is told to leave us alone while
+    // segments === (auth)/signup, so we're safe to keep going here
+    // instead of getting yanked into (app) now that session is set.
+    setStep('personality')
+  }
+
+  const setPersonalityAnswer = (index: number, answer: string) => {
+    const next = [...personality]
+    next[index] = answer
+    setPersonality(next)
+  }
+
+  const handleSavePersonality = async () => {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setLoading(false)
+      alert('Error: Session expired — please start over.')
+      return
+    }
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ personality })
+      .eq('id', user.id)
+
+    if (updateError) {
+      console.warn('Failed to save personality answers:', updateError)
+    }
+
+    // Fetch what the trigger generated at signup — the whole point of
+    // this step is to reveal it.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_alias, avatar')
+      .eq('id', user.id)
+      .single()
+
+    if (profile) {
+      setRevealAlias(profile.display_alias)
+      setRevealAvatar(profile.avatar || 'planet')
+    }
+
+    setLoading(false)
+    setStep('reveal')
+  }
+
+  const handleEnterOrbit = () => {
+    router.replace('/(app)')
   }
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <CosmicBackground />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          <Text style={styles.title}>Join Orbit ✨</Text>
-          <Text style={styles.subtitle}>
-            {step === 1 ? 'Tell us about yourself to begin' : 'Enter the 8-digit code sent to your email'}
-          </Text>
+          {step !== 'reveal' && (
+            <>
+              <Text style={styles.title}>Join Orbit ✨</Text>
+              <Text style={styles.subtitle}>
+                {step === 'details' && 'Tell us about yourself to begin'}
+                {step === 'code' && 'Enter the 8-digit code sent to your email'}
+                {step === 'personality' && 'A few quick questions for better matches'}
+              </Text>
+            </>
+          )}
 
-          {step === 1 ? (
+          {step === 'details' && (
             <>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>University</Text>
@@ -214,7 +278,9 @@ export default function SignupScreen() {
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Verification Code</Text>}
               </TouchableOpacity>
             </>
-          ) : (
+          )}
+
+          {step === 'code' && (
             <>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Verification Code</Text>
@@ -233,13 +299,54 @@ export default function SignupScreen() {
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify Code</Text>}
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.linkButton} onPress={() => setStep(1)}>
+              <TouchableOpacity style={styles.linkButton} onPress={() => setStep('details')}>
                 <Text style={styles.linkText}>Back to details</Text>
               </TouchableOpacity>
             </>
           )}
 
-          {step === 1 && (
+          {step === 'personality' && (
+            <>
+              {PERSONALITY_QUESTIONS.map((q, i) => (
+                <View key={q.key} style={styles.inputGroup}>
+                  <Text style={styles.label}>{q.label}</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={personality[i] || ''}
+                      onValueChange={(val) => setPersonalityAnswer(i, val)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      <Picker.Item label="Select answer..." value="" />
+                      {q.options.map(opt => <Picker.Item key={opt} label={opt} value={opt} />)}
+                    </Picker>
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity style={styles.button} onPress={handleSavePersonality} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
+              </TouchableOpacity>
+            </>
+          )}
+
+          {step === 'reveal' && (
+            <View style={styles.revealContainer}>
+              <View style={styles.revealAvatarRing}>
+                <MaterialCommunityIcons name={revealAvatar as any} size={72} color="#c084fc" />
+              </View>
+              <Text style={styles.revealEyebrow}>Your cosmic identity is</Text>
+              <Text style={styles.revealAlias}>{revealAlias || '…'}</Text>
+              <Text style={styles.revealSubtitle}>
+                Nobody sees your real name here. This is who you'll be, every time you match.
+              </Text>
+              <TouchableOpacity style={styles.button} onPress={handleEnterOrbit}>
+                <Text style={styles.buttonText}>Enter Orbit</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {step === 'details' && (
             <Link href="/(auth)/login" asChild>
               <TouchableOpacity style={styles.linkButton}>
                 <Text style={styles.linkText}>Already have an account? Log in here</Text>
@@ -312,16 +419,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   // See the matching comment in app/(app)/profile.tsx — on web, Picker
-  // renders as a plain <select> and needs an explicit height to match
-  // TextInput's box height; native iOS/Android are left untouched.
+  // renders as a plain <select>: it needs an explicit height + fontSize
+  // to match TextInput's box, and borderWidth: 0 so its own default
+  // border doesn't double up with pickerContainer's. Native iOS/Android
+  // are left untouched.
   picker: {
     backgroundColor: 'transparent',
     color: '#fff',
-    ...(Platform.OS === 'web' ? { height: 48, paddingHorizontal: 12 } : {}),
+    ...(Platform.OS === 'web'
+      ? { height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0 }
+      : {}),
   },
   pickerItem: {
     color: '#fff',
     backgroundColor: '#030712',
+    fontSize: 16,
   },
   textInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
@@ -352,6 +464,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 12,
+    // Every other step's button sits in a plain View (default
+    // alignItems: 'stretch'), so it naturally fills the width. The
+    // reveal step's container centers its children instead (to center
+    // the avatar/text), which would otherwise shrink this button down
+    // to fit "Enter Orbit" — alignSelf: 'stretch' overrides that and
+    // keeps every button full-width regardless of its parent's layout.
+    alignSelf: 'stretch',
   },
   buttonText: {
     color: '#fff',
@@ -366,5 +485,47 @@ const styles = StyleSheet.create({
     color: '#c084fc',
     fontSize: 14,
     fontWeight: '500',
+  },
+  revealContainer: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  revealAvatarRing: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 2,
+    borderColor: '#a855f7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#a855f7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+  },
+  revealEyebrow: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  revealAlias: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  revealSubtitle: {
+    fontSize: 15,
+    color: '#d1d5db',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+    paddingHorizontal: 8,
   },
 })

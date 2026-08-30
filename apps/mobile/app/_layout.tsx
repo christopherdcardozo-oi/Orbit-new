@@ -47,8 +47,14 @@ export default function RootLayout() {
     if (!initialized) return
 
     const inAppGroup = segments[0] === '(app)'
-    
-    if (session && !inAppGroup) {
+    // Signup gets a session as soon as the OTP verifies, but still has its
+    // own personality-questions + reveal-your-name steps to show before
+    // the user should land in the app. Without this check, this redirect
+    // would yank them into (app) the instant verifyOtp resolves, mid-wizard.
+    // signup.tsx calls router.replace('/(app)') itself once that's done.
+    const onSignupScreen = (segments as string[])[0] === '(auth)' && (segments as string[])[1] === 'signup'
+
+    if (session && !inAppGroup && !onSignupScreen) {
       router.replace('/(app)')
     } else if (!session && inAppGroup) {
       router.replace('/')

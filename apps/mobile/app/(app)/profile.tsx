@@ -4,33 +4,13 @@ import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import CosmicBackground from '../../components/CosmicBackground';
+import { PERSONALITY_QUESTIONS } from '../../lib/personality';
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 const AVATARS = ['alien', 'alien-outline', 'rocket-launch', 'ufo', 'ufo-outline', 'planet', 'moon-waning-crescent', 'meteor', 'star-shooting', 'earth', 'satellite-variant'];
 
-// Psychology questions
-const QUESTIONS = [
-  {
-    key: 'energy',
-    label: 'How do you recharge your energy?',
-    options: ['By myself (Introvert)', 'With others (Extrovert)', 'A mix of both (Ambivert)']
-  },
-  {
-    key: 'decisions',
-    label: 'How do you make big choices?',
-    options: ['Logic and facts', 'Gut feeling / Intuition', 'Seeking advice from others']
-  },
-  {
-    key: 'lifestyle',
-    label: 'How do you approach your daily life?',
-    options: ['Careful planning', 'Spontaneous and flexible', 'Go with the flow']
-  },
-  {
-    key: 'mindset',
-    label: 'What is your general outlook?',
-    options: ['Optimistic (Glass half full)', 'Realistic (It is what it is)', 'Idealistic (Chasing perfection)']
-  }
-];
+// Sourced from lib/personality.ts so signup and this screen never drift.
+const QUESTIONS = PERSONALITY_QUESTIONS;
 
 export default function ProfileTabScreen() {
   const [loading, setLoading] = useState(true);
@@ -285,18 +265,26 @@ const styles = StyleSheet.create({
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },
   pickerContainer: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderRadius: 12, borderWidth: 1, borderColor: '#374151', overflow: 'hidden' },
-  // On web, Picker renders as a plain <select> and picks up the browser's
-  // default (short) height unless we say otherwise — it doesn't inherit
-  // the same paddingVertical treatment TextInput gets. Match textInput's
-  // ~48px box height there; leave native iOS/Android untouched since
-  // Picker renders very differently there (a wheel on iOS) and an
-  // explicit height would just clip it.
+  // On web, Picker renders as a plain <select>, which:
+  //  - picks up the browser's own (smaller) default font-size instead of
+  //    inheriting anything from textInput, so we set fontSize explicitly
+  //    to match;
+  //  - ships its own default border/outline, which — layered under
+  //    pickerContainer's border — reads as a doubled/off "weird" edge;
+  //    borderWidth: 0 here makes pickerContainer's border the only one
+  //    that's visible, same as textInput;
+  //  - doesn't inherit paddingVertical the way TextInput does, so we set
+  //    an explicit height instead to get the same ~48px box.
+  // None of this applies natively — iOS renders Picker as a wheel, so we
+  // only touch these on web.
   picker: {
     color: '#fff',
-    backgroundColor: '#030712',
-    ...(Platform.OS === 'web' ? { height: 48, paddingHorizontal: 12 } : {}),
+    backgroundColor: 'transparent',
+    ...(Platform.OS === 'web'
+      ? { height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0 }
+      : {}),
   },
-  pickerItem: { color: '#fff', backgroundColor: '#030712' },
+  pickerItem: { color: '#fff', backgroundColor: '#030712', fontSize: 16 },
   avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
   avatarOption: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1f2937', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
   avatarOptionSelected: { borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.2)' },
