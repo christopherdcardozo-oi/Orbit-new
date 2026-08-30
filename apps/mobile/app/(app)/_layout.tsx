@@ -6,10 +6,15 @@ export default function AppLayout() {
   return (
     <View style={{ flex: 1, backgroundColor: '#030712' }}>
       <Tabs
-        sceneContainerStyle={{ backgroundColor: '#030712' }}
         screenOptions={{
+          // Was a top-level `sceneContainerStyle` prop; in the current
+          // bottom-tabs API this moved into `screenOptions` as `sceneStyle`.
+          sceneStyle: { backgroundColor: '#030712' },
           headerShown: false,
-          unmountOnBlur: true,
+          // NOTE: `unmountOnBlur` was removed from react-navigation bottom-tabs.
+          // The transparent-overlay-on-web bug it originally fixed is now
+          // handled by the opaque backgrounds on each screen (see the
+          // "strictly separate screens with solid backgrounds" fix in git log).
           tabBarStyle: styles.tabBar,
           tabBarActiveTintColor: '#c084fc',
           tabBarInactiveTintColor: '#6b7280',

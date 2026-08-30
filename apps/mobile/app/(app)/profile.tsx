@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   avatar: { marginBottom: 8, shadowColor: '#a855f7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 15, elevation: 10 },
   title: { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 4 },
   subtitle: { fontSize: 16, color: '#9ca3af', textTransform: 'capitalize' },
-  card: { backgroundColor: 'rgba(17, 24, 39, 0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#1f2937', marginBottom: 60 },
+  card: { backgroundColor: 'rgba(17, 24, 39, 0.6)', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#1f2937', marginBottom: 60 },
   inputGroup: { marginBottom: 20 },
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },

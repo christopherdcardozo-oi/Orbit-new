@@ -6,7 +6,10 @@ import { supabase } from './supabase';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // shouldShowAlert was replaced in expo-notifications v0.30 by the more
+    // granular shouldShowBanner (heads-up) and shouldShowList (notif center).
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),

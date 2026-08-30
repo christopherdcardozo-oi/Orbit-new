@@ -98,7 +98,7 @@ export default function CosmicBackground() {
   }, [cometX, cometY, cometOpacity]);
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <View style={[styles.gradientBubble, styles.purpleBubble]} />
       <View style={[styles.gradientBubble, styles.indigoBubble]} />
 
