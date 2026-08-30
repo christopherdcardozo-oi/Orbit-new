@@ -126,7 +126,7 @@ export default function SignupPage() {
       <div className="w-full max-w-2xl bg-gray-900/50 backdrop-blur-xl p-8 rounded-2xl border border-gray-800 shadow-2xl relative z-10">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2 flex items-center justify-center gap-2">
-            Join Antigravity <span role="img" aria-label="sparkles">✨</span>
+            Join Orbit <span role="img" aria-label="sparkles">✨</span>
           </h1>
           <p className="text-gray-400">
             {step === 1 ? 'Select your campus to begin' : 'Complete your profile to find your matches'}

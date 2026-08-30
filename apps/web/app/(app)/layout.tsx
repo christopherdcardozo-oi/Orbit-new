@@ -26,7 +26,7 @@ export default async function AppLayout({
       <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-md sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/dashboard" className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-cyan-400">
-            Antigravity
+            Orbit
           </Link>
           
           <form action={signOut}>

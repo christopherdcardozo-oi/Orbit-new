@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "web": "npm run dev --workspace=antigravity-app",
-    "web:build": "npm run build --workspace=antigravity-app",
+    "web": "npm run dev --workspace=orbit-web",
+    "web:build": "npm run build --workspace=orbit-web",
     "mobile": "npm run start --workspace=orbit",
     "mobile:ios": "npm run ios --workspace=orbit",
     "mobile:android": "npm run android --workspace=orbit",

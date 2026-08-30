@@ -6,7 +6,7 @@ import { SupabaseProvider } from '@/components/providers/SupabaseProvider'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Antigravity',
+  title: 'Orbit',
   description: 'Anonymous college connections that reset at midnight',
 }
 

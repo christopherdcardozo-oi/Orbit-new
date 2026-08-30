@@ -13,7 +13,7 @@ export default function LandingPage() {
       <div className="relative z-10 container mx-auto px-6 py-24 text-center">
         {/* Hero */}
         <h1 className="text-6xl md:text-8xl font-black mb-6 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-cyan-400 drop-shadow-sm">
-          Antigravity
+          Orbit
         </h1>
         <p className="text-xl md:text-2xl text-gray-300 mb-12 max-w-2xl mx-auto font-light tracking-wide">
           Anonymous connections. One campus. Reset at midnight.
