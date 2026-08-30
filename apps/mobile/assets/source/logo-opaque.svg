@@ -1,0 +1,49 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="planetGrad" cx="38%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#e9d5ff"/>
+      <stop offset="45%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1024" height="1024" fill="#030712"/>
+
+  <!-- Starfield -->
+  <g fill="#ffffff">
+    <circle cx="120" cy="140" r="3" fill-opacity="0.6"/>
+    <circle cx="200" cy="260" r="2" fill-opacity="0.4"/>
+    <circle cx="90" cy="420" r="2.5" fill-opacity="0.5"/>
+    <circle cx="160" cy="640" r="2" fill-opacity="0.35"/>
+    <circle cx="260" cy="780" r="3" fill-opacity="0.55"/>
+    <circle cx="110" cy="860" r="2" fill-opacity="0.4"/>
+    <circle cx="300" cy="150" r="2" fill-opacity="0.45"/>
+    <circle cx="900" cy="180" r="3" fill-opacity="0.6"/>
+    <circle cx="820" cy="120" r="2" fill-opacity="0.4"/>
+    <circle cx="940" cy="300" r="2.5" fill-opacity="0.5"/>
+    <circle cx="880" cy="620" r="2" fill-opacity="0.4"/>
+    <circle cx="950" cy="760" r="3" fill-opacity="0.55"/>
+    <circle cx="800" cy="880" r="2" fill-opacity="0.4"/>
+    <circle cx="700" cy="920" r="2.5" fill-opacity="0.45"/>
+    <circle cx="220" cy="920" r="2" fill-opacity="0.4"/>
+    <circle cx="500" cy="90" r="2.5" fill-opacity="0.5"/>
+  </g>
+
+  <!-- Ring glow (soft halo behind the crisp ring) -->
+  <ellipse cx="512" cy="512" rx="320" ry="160" transform="rotate(-20 512 512)"
+           fill="none" stroke="#c084fc" stroke-opacity="0.25" stroke-width="46"/>
+
+  <!-- Orbit ring -->
+  <ellipse cx="512" cy="512" rx="320" ry="160" transform="rotate(-20 512 512)"
+           fill="none" stroke="#c084fc" stroke-opacity="0.9" stroke-width="16"/>
+
+  <!-- Planet -->
+  <circle cx="512" cy="512" r="210" fill="url(#planetGrad)"/>
+
+  <!-- Moon glow -->
+  <circle cx="832" cy="392" r="62" fill="#f5f3ff" fill-opacity="0.3"/>
+
+  <!-- Moon -->
+  <circle cx="832" cy="392" r="30" fill="#f5f3ff"/>
+</svg>

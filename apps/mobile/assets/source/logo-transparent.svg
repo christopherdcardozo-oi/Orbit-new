@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="planetGrad" cx="38%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#e9d5ff"/>
+      <stop offset="45%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ring glow (soft halo behind the crisp ring) -->
+  <ellipse cx="512" cy="512" rx="320" ry="160" transform="rotate(-20 512 512)"
+           fill="none" stroke="#c084fc" stroke-opacity="0.25" stroke-width="46"/>
+
+  <!-- Orbit ring -->
+  <ellipse cx="512" cy="512" rx="320" ry="160" transform="rotate(-20 512 512)"
+           fill="none" stroke="#c084fc" stroke-opacity="0.9" stroke-width="16"/>
+
+  <!-- Planet -->
+  <circle cx="512" cy="512" r="210" fill="url(#planetGrad)"/>
+
+  <!-- Moon glow -->
+  <circle cx="832" cy="392" r="62" fill="#f5f3ff" fill-opacity="0.3"/>
+
+  <!-- Moon -->
+  <circle cx="832" cy="392" r="30" fill="#f5f3ff"/>
+</svg>
