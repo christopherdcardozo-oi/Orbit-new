@@ -311,9 +311,13 @@ const styles = StyleSheet.create({
     borderColor: '#374151',
     overflow: 'hidden',
   },
+  // See the matching comment in app/(app)/profile.tsx — on web, Picker
+  // renders as a plain <select> and needs an explicit height to match
+  // TextInput's box height; native iOS/Android are left untouched.
   picker: {
     backgroundColor: 'transparent',
     color: '#fff',
+    ...(Platform.OS === 'web' ? { height: 48, paddingHorizontal: 12 } : {}),
   },
   pickerItem: {
     color: '#fff',

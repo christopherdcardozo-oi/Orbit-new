@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -285,7 +285,17 @@ const styles = StyleSheet.create({
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },
   pickerContainer: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderRadius: 12, borderWidth: 1, borderColor: '#374151', overflow: 'hidden' },
-  picker: { color: '#fff', backgroundColor: '#030712' },
+  // On web, Picker renders as a plain <select> and picks up the browser's
+  // default (short) height unless we say otherwise — it doesn't inherit
+  // the same paddingVertical treatment TextInput gets. Match textInput's
+  // ~48px box height there; leave native iOS/Android untouched since
+  // Picker renders very differently there (a wheel on iOS) and an
+  // explicit height would just clip it.
+  picker: {
+    color: '#fff',
+    backgroundColor: '#030712',
+    ...(Platform.OS === 'web' ? { height: 48, paddingHorizontal: 12 } : {}),
+  },
   pickerItem: { color: '#fff', backgroundColor: '#030712' },
   avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
   avatarOption: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1f2937', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
