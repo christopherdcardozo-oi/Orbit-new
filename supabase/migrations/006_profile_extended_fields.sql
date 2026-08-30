@@ -11,4 +11,5 @@ ALTER TABLE public.profiles
     ADD COLUMN IF NOT EXISTS fcm_token TEXT,
     ADD COLUMN IF NOT EXISTS gender TEXT,
     ADD COLUMN IF NOT EXISTS custom_gender TEXT,
-    ADD COLUMN IF NOT EXISTS personality TEXT[] DEFAULT '{}';
+    ADD COLUMN IF NOT EXISTS personality TEXT[] DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT 'planet';

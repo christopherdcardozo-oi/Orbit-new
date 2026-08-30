@@ -28,3 +28,9 @@ yarn-error.log*
 # original per-repo clones kept for reference; not part of the monorepo
 sources/
 
+# per-project MCP server config may reference tokens via env; the file itself
+# is safe to commit as long as no tokens are inlined, but until this repo has
+# a remote it's simpler to keep it local.
+.mcp.json
+
+
