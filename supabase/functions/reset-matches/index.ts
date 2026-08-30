@@ -22,6 +22,7 @@ type Profile = {
   major: string | null;
   hobbies: string[] | null;
   activities: string[] | null;
+  personality: string[] | null; // answers to lib/personality.ts's 4 questions, same index order
   year_in_school: string | null;
   is_active: boolean;
   fcm_token: string | null; // actually holds an Expo push token, see notes
@@ -46,6 +47,55 @@ function fisherYatesShuffle<T>(array: T[]): T[] {
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// Compatibility score between two eligible candidates. Higher is better.
+// Weights are deliberately ordered by how strongly each signal correlates
+// with "these two will have something to talk about":
+//   +3 per matching personality answer (same question index, same choice)
+//      — up to 4 questions, so 0-12 points. Weighted highest since it's
+//      the newest, most deliberate signal a user gives (a whole dedicated
+//      onboarding step), and directly reflects compatibility rather than
+//      just a shared label.
+//   +2 per shared hobby     — free-text overlap, strong shared-interest
+//                              signal, already what generateIcebreaker()
+//                              prioritizes first.
+//   +1 per shared activity  — campus-org overlap, weaker/more common
+//                              signal (lots of people share "Intramurals").
+//   +1 same major           — a nice-to-have, not chosen as strongly as
+//                              hobbies/personality (people don't sign up
+//                              *for* their major the way they pick hobbies).
+// No normalization/caps beyond that — profiles with more populated fields
+// naturally have more to score on, which is fine: it rewards a completed
+// profile with better matches rather than penalizing a sparse one (a
+// sparse profile just scores 0 against everyone and falls back to the
+// shuffle order, same as today's fully-random behavior).
+function compatibilityScore(a: Profile, b: Profile): number {
+  let score = 0;
+
+  const personalityA = a.personality ?? [];
+  const personalityB = b.personality ?? [];
+  for (let i = 0; i < Math.min(personalityA.length, personalityB.length); i++) {
+    if (personalityA[i] && personalityA[i] === personalityB[i]) {
+      score += 3;
+    }
+  }
+
+  const hobbiesA = a.hobbies ?? [];
+  const hobbiesB = b.hobbies ?? [];
+  const sharedHobbies = hobbiesA.filter((h) => hobbiesB.includes(h)).length;
+  score += sharedHobbies * 2;
+
+  const activitiesA = a.activities ?? [];
+  const activitiesB = b.activities ?? [];
+  const sharedActivities = activitiesA.filter((x) => activitiesB.includes(x)).length;
+  score += sharedActivities;
+
+  if (a.major && b.major && a.major === b.major) {
+    score += 1;
+  }
+
+  return score;
 }
 
 // Port of apps/web/lib/matching/icebreaker.ts — kept byte-for-byte
@@ -125,7 +175,11 @@ async function sendPushNotification(
   }
 }
 
-// ---------- Core matchmaking (port of apps/web/lib/matching/algorithm.ts) ----------
+// ---------- Core matchmaking ----------
+// Compatibility-weighted: within each campus, users are paired by highest
+// compatibilityScore() among still-eligible (not recently matched)
+// candidates, not by first-available. See compatibilityScore() above for
+// the exact weighting.
 
 async function runMatchmaking(supabase: SupabaseClient): Promise<MatchmakingResults> {
   const results: MatchmakingResults = { matched: 0, oddManOut: [], errors: [] };
@@ -188,6 +242,13 @@ async function runMatchmaking(supabase: SupabaseClient): Promise<MatchmakingResu
       allowedHistorySet.add([h.user1_id, h.user2_id].sort().join('_'));
     }
 
+    // Shuffled so tie-breaking (equal scores, or nobody has any signal in
+    // common) still feels random rather than always favoring, say, whoever
+    // signed up first. Within that shuffle order, each unmatched user picks
+    // the highest-scoring still-available, not-recently-matched partner —
+    // greedy, not a global optimum (no Gale-Shapley stable-matching pass),
+    // but it means people with real overlap (personality/hobbies) reliably
+    // find each other instead of it being pure luck of the shuffle.
     const shuffled = fisherYatesShuffle(domainProfiles);
     const matched = new Set<string>();
 
@@ -196,14 +257,18 @@ async function runMatchmaking(supabase: SupabaseClient): Promise<MatchmakingResu
       if (matched.has(userA.id)) continue;
 
       let foundMatch: Profile | null = null;
+      let bestScore = -1;
       for (let j = i + 1; j < shuffled.length; j++) {
         const userB = shuffled[j];
         if (matched.has(userB.id)) continue;
 
         const key = [userA.id, userB.id].sort().join('_');
         if (!historySet.has(key) || allowedHistorySet.has(key)) {
-          foundMatch = userB;
-          break;
+          const score = compatibilityScore(userA, userB);
+          if (score > bestScore) {
+            bestScore = score;
+            foundMatch = userB;
+          }
         }
       }
 
