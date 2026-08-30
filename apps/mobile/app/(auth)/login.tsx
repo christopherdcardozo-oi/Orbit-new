@@ -67,18 +67,6 @@ export default function LoginScreen() {
     // If successful, app/_layout.tsx will auto-redirect to dashboard
   }
 
-  const handleDevBypass = async () => {
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({
-      email: 'ccardozo@iastate.edu',
-      password: 'password123',
-    })
-    setLoading(false)
-    if (error) {
-      alert(`Error: ${error.message}`)
-    }
-  }
-
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -174,10 +162,6 @@ export default function LoginScreen() {
           </Link>
         )}
 
-        {/* Developer Bypass Button */}
-        <TouchableOpacity style={{ marginTop: 30, alignItems: 'center' }} onPress={handleDevBypass}>
-          <Text style={{ color: '#4b5563', fontSize: 12 }}>[Dev: Bypass Email Login]</Text>
-        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   )
