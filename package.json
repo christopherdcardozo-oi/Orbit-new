@@ -7,11 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "web": "npm run dev --workspace=orbit-web",
-    "web:build": "npm run build --workspace=orbit-web",
-    "mobile": "npm run start --workspace=orbit",
-    "mobile:ios": "npm run ios --workspace=orbit",
-    "mobile:android": "npm run android --workspace=orbit",
-    "mobile:web": "npm run web --workspace=orbit"
+    "start": "npm run start --workspace=orbit",
+    "ios": "npm run ios --workspace=orbit",
+    "android": "npm run android --workspace=orbit",
+    "web": "npm run web --workspace=orbit"
   }
 }

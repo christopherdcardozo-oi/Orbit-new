@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/reset-matches",
-      "schedule": "0 0 * * *"
-    }
-  ]
-}

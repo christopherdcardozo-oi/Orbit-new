@@ -1,47 +1,57 @@
-# Orbit (monorepo)
+# Orbit
 
-Combined workspace containing the Orbit mobile app, the Orbit web app, and the
-shared Supabase schema. Assembled locally from two upstream repos:
+One codebase, three targets:
 
-- Mobile — https://github.com/christopherdcardozo-oi/Orbit
-- Web / API — https://github.com/christopherdcardozo-oi/Orbit-Backend
+- **iOS** — via `eas build --platform ios` (Apple App Store submissions)
+- **Android** — via `eas build --platform android` (Google Play Store submissions)
+- **Web** — via `expo export -p web` (deployed to Vercel at `orbit-nine-ruddy.vercel.app`)
 
-Both were imported with `git subtree`, so their full commit history is
-preserved in `git log`.
+All three are built from the same Expo / React Native code in [apps/mobile/](apps/mobile/).
 
 ## Layout
 
 ```
 apps/
-  mobile/          Expo / React Native app (expo-router)
-  web/             Next.js 16 app (also hosts the reset-matches cron)
+  mobile/          Expo / React Native app (expo-router). The product.
+packages/
+  shared/          @orbit/shared — DB types, generated from live Supabase.
 supabase/
-  migrations/      Single source of truth for the DB schema
-packages/          (empty, reserved for shared code)
-sources/           The original per-repo clones, kept for reference. Their
-                   `origin` remotes still point at GitHub — the monorepo
-                   itself has no remote.
+  migrations/      SQL migrations, applied in order.
+  functions/       Edge Functions (Deno) — reset-matches (daily cron).
+  email-templates/ HTML templates for Auth emails (paste into Supabase UI).
 ```
 
 ## Setup
 
 ```bash
-npm install              # installs both apps via workspaces
+npm install
 ```
 
-Each app needs its own `.env.local` with the Supabase URL / anon key
-(see each app's code for the exact variable names).
+Then `apps/mobile/.env` must have the Supabase URL + publishable key. See
+the file for the exact variable names.
 
 ## Run
 
 ```bash
-npm run web              # Next.js dev server (http://localhost:3000)
-npm run mobile           # Expo dev server
-npm run mobile:ios       # Expo, boot iOS simulator
+npm run web              # Expo web dev server (localhost)
+npm run ios              # Expo, boot iOS simulator
+npm run android          # Expo, boot Android emulator
+npm start                # Expo dev menu — pick your platform
 ```
 
-## Note on remotes
+## Deploy
 
-The monorepo's `.git` has **no remote**. Nothing here can push to
-christopherdcardozo-oi/*. The original clones under `sources/` still have
-their remotes if you ever need to sync changes back upstream by hand.
+- **Web:** every push to `main` auto-deploys to Vercel (`orbit-nine-ruddy.vercel.app`).
+  Vercel project settings must have Root Directory = `apps/mobile` and
+  Build Command = `npx expo export -p web`, Output Directory = `dist`.
+- **iOS / Android:** `cd apps/mobile && npx eas build --platform ios` (or `android`).
+  Requires `eas init` first if `eas.json` doesn't exist yet.
+
+## Supabase
+
+Everything lives inside the `genvenrtspvuuuwgfhwo` project:
+- Schema + RLS policies + triggers → `supabase/migrations/`
+- Daily matchmaking → `supabase/functions/reset-matches/`, scheduled at 00:30 UTC
+  via `pg_cron` + `pg_net` (see `supabase/migrations/007_matchmaking_cron.sql`).
+- Auth emails → templates in `supabase/email-templates/`; SMTP is Resend
+  via `noreply@orbit.orghubs.com`.
