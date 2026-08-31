@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native'
 import { Link } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 
@@ -6,10 +6,14 @@ import CosmicBackground from '../components/CosmicBackground'
 
 export default function LandingPage() {
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
       <StatusBar style="light" />
       <CosmicBackground />
-      
+
       <View style={styles.content}>
         <Image
           source={require('../assets/logo.png')}
@@ -49,7 +53,7 @@ export default function LandingPage() {
           </View>
         </View>
       </View>
-    </View>
+    </ScrollView>
   )
 }
 
@@ -57,17 +61,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#030712',
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingVertical: 40,
   },
   content: {
     alignItems: 'center',
-    marginTop: 40,
   },
   logo: {
-    width: 160,
-    height: 160,
-    marginBottom: 8,
+    width: 120,
+    height: 120,
+    marginBottom: -4,
+    borderRadius: 24,
   },
   title: {
     fontSize: 48,
