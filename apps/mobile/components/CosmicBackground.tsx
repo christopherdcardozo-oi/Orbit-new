@@ -98,7 +98,7 @@ export default function CosmicBackground() {
   }, [cometX, cometY, cometOpacity]);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, styles.clip]} pointerEvents="none">
       <View style={[styles.gradientBubble, styles.purpleBubble]} />
       <View style={[styles.gradientBubble, styles.indigoBubble]} />
 
@@ -139,6 +139,17 @@ export default function CosmicBackground() {
 }
 
 const styles = StyleSheet.create({
+  // gradientBubble deliberately extends past its own box (width: 150%,
+  // negative left/right offsets) to feel like an ambient glow bleeding
+  // off-screen. Without clipping it here, that oversized box genuinely
+  // widens the page's scrollable area — on iOS Safari specifically, any
+  // horizontal overflow like that makes the browser auto-zoom the whole
+  // page out to fit it, and it doesn't zoom back in on its own. That's
+  // what was actually causing the "zoomed out with blank margins" bug,
+  // on every screen, not the keyboard or route transitions themselves.
+  clip: {
+    overflow: 'hidden',
+  },
   gradientBubble: {
     position: 'absolute',
     width: '150%',
