@@ -104,6 +104,7 @@ export default function ChatScreen() {
   const [revealType, setRevealType] = useState<ContactReveal['handle_type']>('instagram')
   const [revealValue, setRevealValue] = useState('')
   const [revealBusy, setRevealBusy] = useState(false)
+  const [revealError, setRevealError] = useState<string | null>(null)
 
   // ---------- Initial load ----------
 
@@ -344,6 +345,7 @@ export default function ChatScreen() {
     const value = revealValue.trim()
     if (!value) return
     setRevealBusy(true)
+    setRevealError(null)
     // Upsert on (match_id, user_id) so re-submitting overwrites your
     // previous choice cleanly.
     const { error } = await supabase
@@ -353,10 +355,15 @@ export default function ChatScreen() {
         { onConflict: 'match_id,user_id' }
       )
     setRevealBusy(false)
-    if (!error) {
-      setMyReveal({ user_id: userId, handle_type: revealType, handle_value: value })
-      setRevealModalOpen(false)
+    if (error) {
+      // Silent failure was the bug — show what actually went wrong instead
+      // of just closing (or worse: doing nothing).
+      console.warn('contact_reveals upsert failed:', error)
+      setRevealError(error.message || 'Something went wrong sharing your contact.')
+      return
     }
+    setMyReveal({ user_id: userId, handle_type: revealType, handle_value: value })
+    setRevealModalOpen(false)
   }
 
   const submitReport = async () => {
@@ -592,7 +599,7 @@ export default function ChatScreen() {
                 </Text>
                 <TouchableOpacity
                   style={styles.revealBannerBtn}
-                  onPress={() => { setRevealValue(''); setRevealType('instagram'); setRevealModalOpen(true) }}
+                  onPress={() => { setRevealValue(''); setRevealType('instagram'); setRevealError(null); setRevealModalOpen(true) }}
                 >
                   <Text style={styles.revealBannerBtnText}>Share contact</Text>
                 </TouchableOpacity>
@@ -735,12 +742,23 @@ export default function ChatScreen() {
             <Text style={styles.sheetSubtitle}>
               Only shown to {match.partnerAlias} once they share theirs too. You can update or take back the share any time.
             </Text>
+            <Text style={styles.sheetHelp}>Pick one — the type they'll get from you.</Text>
             <View style={styles.handleTypeRow}>
               {HANDLE_TYPES.map((t) => (
                 <TouchableOpacity
                   key={t.value}
                   style={[styles.handleTypeChip, revealType === t.value && styles.handleTypeChipActive]}
-                  onPress={() => setRevealType(t.value)}
+                  onPress={() => {
+                    // Clear the value on chip switch so it's obvious the
+                    // field belongs to the newly-picked type (previously
+                    // an email typed under "Email" would carry over as if
+                    // it belonged to "Instagram").
+                    if (t.value !== revealType) {
+                      setRevealValue('')
+                      setRevealError(null)
+                    }
+                    setRevealType(t.value)
+                  }}
                 >
                   <Text style={[styles.handleTypeText, revealType === t.value && { color: '#fff' }]}>{t.label}</Text>
                 </TouchableOpacity>
@@ -751,12 +769,17 @@ export default function ChatScreen() {
               placeholder={HANDLE_TYPES.find(t => t.value === revealType)?.placeholder}
               placeholderTextColor="#6b7280"
               value={revealValue}
-              onChangeText={setRevealValue}
+              onChangeText={(t) => { setRevealValue(t); if (revealError) setRevealError(null) }}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType={revealType === 'phone' ? 'phone-pad' : revealType === 'email' ? 'email-address' : 'default'}
               maxLength={200}
             />
+            {revealError && (
+              <Text style={{ color: '#fca5a5', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                {revealError}
+              </Text>
+            )}
             <View style={styles.sheetActions}>
               <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setRevealModalOpen(false)}>
                 <Text style={styles.sheetCancelText}>Cancel</Text>
@@ -1020,6 +1043,7 @@ const styles = StyleSheet.create({
 
   sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 4, textAlign: 'center' },
   sheetSubtitle: { color: '#9ca3af', fontSize: 13, textAlign: 'center', marginBottom: 16, lineHeight: 18 },
+  sheetHelp: { color: '#6b7280', fontSize: 12, marginBottom: 8 },
 
   optionRow: {
     flexDirection: 'row',
