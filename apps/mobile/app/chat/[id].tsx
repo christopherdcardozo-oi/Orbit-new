@@ -426,7 +426,23 @@ export default function ChatScreen() {
       setRevealError(error.message || 'Something went wrong sharing your contact.')
       return
     }
-    // Reset form for adding another type; realtime will refresh the list.
+    // Optimistically update myReveals so the banner and the "You're
+    // sharing" list reflect this insert immediately, instead of waiting
+    // for the realtime event to arrive. Realtime still re-fetches
+    // asynchronously in case the row shape differs (unlikely, but the
+    // real DB is the source of truth on a proper re-sync).
+    const inserted: ContactReveal = {
+      user_id: userId,
+      handle_type: revealType,
+      handle_value: trimmed,
+      revealed: true, // my own row: I can always see it
+    }
+    setMyReveals((prev) => {
+      const others = prev.filter((r) => r.handle_type !== revealType)
+      return [...others, inserted]
+    })
+
+    // Reset form for adding another type.
     setRevealValue('')
     setRevealError(null)
     // Auto-advance to the next unused type as a small nudge to add more.
@@ -435,17 +451,22 @@ export default function ChatScreen() {
     if (nextUnused) setRevealType(nextUnused.value)
   }
 
-  // Delete one of my shares (RLS allows only my own).
+  // Delete one of my shares (RLS allows only my own). Optimistically
+  // removes it locally too so the UI updates immediately, not just
+  // after the realtime event arrives.
   const retractReveal = async (handle_type: HandleType) => {
     if (!id || !userId) return
+    setMyReveals((prev) => prev.filter((r) => r.handle_type !== handle_type))
     const { error } = await supabase
       .from('contact_reveals')
       .delete()
       .eq('match_id', id)
       .eq('user_id', userId)
       .eq('handle_type', handle_type)
-    if (error) console.warn('contact_reveals delete failed:', error)
-    // Realtime + effect above will refresh the arrays.
+    if (error) {
+      // Roll back the optimistic removal if the delete somehow fails.
+      console.warn('contact_reveals delete failed:', error)
+    }
   }
 
   const submitReport = async () => {
@@ -682,22 +703,44 @@ export default function ChatScreen() {
             )
           }
 
+          // Little "Edit" pill on the right that reopens the modal —
+          // more obvious than the plain-text "Manage" link that was
+          // easy to miss.
+          const editPill = (
+            <View style={styles.revealEditPill}>
+              <Ionicons name="create-outline" size={12} color="#c084fc" />
+              <Text style={styles.revealEditPillText}>Edit</Text>
+            </View>
+          )
+
+          // Short summary of MY shares — used in states (b) and (c) so
+          // people can see what they entered without having to reopen
+          // the modal.
+          const mineSummary = myReveals.length > 0 && (
+            <Text style={styles.revealBannerMine} numberOfLines={2}>
+              You shared: {myReveals.map((r) => `${handleMeta(r.handle_type).emoji} ${handleMeta(r.handle_type).label}`).join(' · ')}
+            </Text>
+          )
+
           // (b) I've shared, partner hasn't shared anything at all yet.
           if (myReveals.length > 0 && partnerReveals.length === 0) {
             return (
-              <TouchableOpacity style={styles.revealBanner} onPress={openManage}>
+              <TouchableOpacity style={styles.revealBanner} onPress={openManage} activeOpacity={0.7}>
                 <Ionicons name="time-outline" size={18} color="#c084fc" />
-                <Text style={styles.revealBannerText}>
-                  Shared. Waiting for {match.partnerAlias} to share theirs.
-                </Text>
-                <Text style={styles.revealBannerLink}>Manage</Text>
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={styles.revealBannerText}>
+                    Waiting for {match.partnerAlias} to share the same type.
+                  </Text>
+                  {mineSummary}
+                </View>
+                {editPill}
               </TouchableOpacity>
             )
           }
 
           // (c) At least one side has partial visibility.
           return (
-            <TouchableOpacity style={styles.revealBanner} onPress={openManage}>
+            <TouchableOpacity style={styles.revealBanner} onPress={openManage} activeOpacity={0.7}>
               <Ionicons name="checkmark-circle" size={18} color="#86efac" />
               <View style={{ flex: 1, marginLeft: 8 }}>
                 {revealedFromPartner.length > 0 ? (
@@ -711,9 +754,10 @@ export default function ChatScreen() {
                   ))
                 ) : (
                   <Text style={styles.revealBannerText}>
-                    You've shared. Add a matching type to unlock theirs.
+                    Add a matching type to unlock theirs.
                   </Text>
                 )}
+                {mineSummary}
                 {partnerTypesIHavent.length > 0 && (
                   <Text style={styles.revealBannerHint}>
                     {match.partnerAlias} also shared{' '}
@@ -722,7 +766,7 @@ export default function ChatScreen() {
                   </Text>
                 )}
               </View>
-              <Text style={styles.revealBannerLink}>Manage</Text>
+              {editPill}
             </TouchableOpacity>
           )
         })()}
@@ -1175,6 +1219,20 @@ const styles = StyleSheet.create({
   revealBannerValueLine: { color: '#fff', fontSize: 14, lineHeight: 20 },
   revealBannerHint: { color: '#c084fc', fontSize: 12, marginTop: 4, fontStyle: 'italic' },
   revealBannerLink: { color: '#c084fc', fontSize: 12, fontWeight: '700', marginLeft: 8 },
+  revealBannerMine: { color: '#9ca3af', fontSize: 12, marginTop: 3 },
+  revealEditPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.4)',
+  },
+  revealEditPillText: { color: '#c084fc', fontSize: 11, fontWeight: '700' },
   revealBannerBtn: {
     backgroundColor: '#9333ea',
     paddingHorizontal: 12,
