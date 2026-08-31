@@ -19,6 +19,7 @@ import { Picker } from '@react-native-picker/picker'
 import CosmicBackground from '../../components/CosmicBackground'
 import Skeleton from '../../components/Skeleton'
 import { supabase } from '../../lib/supabase'
+import { PERSONALITY_QUESTIONS } from '../../lib/personality'
 
 type Message = {
   id: string
@@ -122,6 +123,11 @@ type MatchInfo = {
   partnerId: string
   partnerAlias: string
   partnerAvatar: string
+  partnerMajor: string | null
+  partnerYear: string | null
+  partnerPersonality: string[] | null
+  partnerHobbies: string[] | null
+  partnerActivities: string[] | null
 }
 
 export default function ChatScreen() {
@@ -156,6 +162,11 @@ export default function ChatScreen() {
 
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false)
   const [blockBusy, setBlockBusy] = useState(false)
+
+  // Mini profile modal — tap partner name/avatar in the header to see
+  // their personality answers + major/year. Nothing new is fetched
+  // when opened; all this data is already loaded with the match.
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
 
   // Contact reveals — arrays now, since users can share multiple types
   // (Instagram + Snap + email) and each type is independently
@@ -194,7 +205,7 @@ export default function ChatScreen() {
       const partnerId = matchRow.user1_id === user.id ? matchRow.user2_id : matchRow.user1_id
       const { data: partner } = await supabase
         .from('profiles')
-        .select('display_alias, avatar')
+        .select('display_alias, avatar, major, year_in_school, personality, hobbies, activities')
         .eq('id', partnerId)
         .single()
 
@@ -206,6 +217,11 @@ export default function ChatScreen() {
         partnerId,
         partnerAlias: partner?.display_alias ?? 'Mystery Connection',
         partnerAvatar: partner?.avatar ?? 'planet',
+        partnerMajor: partner?.major ?? null,
+        partnerYear: partner?.year_in_school ?? null,
+        partnerPersonality: partner?.personality ?? null,
+        partnerHobbies: partner?.hobbies ?? null,
+        partnerActivities: partner?.activities ?? null,
       })
 
       const { data: existingMessages } = await supabase
@@ -607,10 +623,15 @@ export default function ChatScreen() {
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
-        <View style={styles.headerCenter}>
+        <TouchableOpacity
+          style={styles.headerCenter}
+          onPress={() => setProfileModalOpen(true)}
+          activeOpacity={0.7}
+        >
           <MaterialCommunityIcons name={match.partnerAvatar as any} size={20} color="#c084fc" />
           <Text style={styles.headerTitle} numberOfLines={1}>{match.partnerAlias}</Text>
-        </View>
+          <Ionicons name="chevron-down" size={14} color="#9ca3af" />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.backButton} onPress={() => setMenuOpen(true)}>
           <Ionicons name="ellipsis-vertical" size={22} color="#fff" />
         </TouchableOpacity>
@@ -1002,6 +1023,72 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Mini profile — reveals partner's personality answers + basics.
+          Everything here is already loaded with the match, so opening
+          is free. No RLS gap: the partner-profile visibility policy
+          (migration 016) is what let the initial fetch succeed. */}
+      <Modal visible={profileModalOpen} transparent animationType="slide" onRequestClose={() => setProfileModalOpen(false)}>
+        <View style={styles.menuBackdrop}>
+          <View style={[styles.menuSheet, { padding: 20, maxHeight: '85%' }]}>
+            <View style={styles.profileHeaderRow}>
+              <View style={styles.profileAvatarRing}>
+                <MaterialCommunityIcons name={match.partnerAvatar as any} size={44} color="#c084fc" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.profileAlias}>{match.partnerAlias}</Text>
+                <Text style={styles.profileSubline}>
+                  {[match.partnerMajor, match.partnerYear].filter(Boolean).join(' · ') || 'No profile details'}
+                </Text>
+              </View>
+            </View>
+
+            <FlatList
+              data={PERSONALITY_QUESTIONS}
+              keyExtractor={(q) => q.key}
+              style={{ marginTop: 16, maxHeight: 340 }}
+              contentContainerStyle={{ paddingBottom: 8 }}
+              showsVerticalScrollIndicator={false}
+              ListHeaderComponent={
+                <Text style={styles.profileSectionLabel}>Personality</Text>
+              }
+              renderItem={({ item, index }) => {
+                const answer = match.partnerPersonality?.[index]
+                return (
+                  <View style={styles.profileQARow}>
+                    <Text style={styles.profileQ}>{item.label}</Text>
+                    <Text style={[styles.profileA, !answer && { color: '#6b7280', fontStyle: 'italic' }]}>
+                      {answer || 'No answer'}
+                    </Text>
+                  </View>
+                )
+              }}
+              ListFooterComponent={
+                (match.partnerHobbies?.length || match.partnerActivities?.length) ? (
+                  <View style={{ marginTop: 4 }}>
+                    {match.partnerHobbies?.length ? (
+                      <>
+                        <Text style={[styles.profileSectionLabel, { marginTop: 12 }]}>Hobbies</Text>
+                        <Text style={styles.profileTagList}>{match.partnerHobbies.join(' · ')}</Text>
+                      </>
+                    ) : null}
+                    {match.partnerActivities?.length ? (
+                      <>
+                        <Text style={[styles.profileSectionLabel, { marginTop: 12 }]}>Activities</Text>
+                        <Text style={styles.profileTagList}>{match.partnerActivities.join(' · ')}</Text>
+                      </>
+                    ) : null}
+                  </View>
+                ) : null
+              }
+            />
+
+            <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setProfileModalOpen(false)}>
+              <Text style={styles.sheetCancelText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1233,6 +1320,33 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(168, 85, 247, 0.4)',
   },
   revealEditPillText: { color: '#c084fc', fontSize: 11, fontWeight: '700' },
+
+  // Mini profile modal
+  profileHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  profileAvatarRing: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: 'rgba(31, 41, 55, 0.8)',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(168, 85, 247, 0.4)',
+  },
+  profileAlias: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  profileSubline: { color: '#9ca3af', fontSize: 13, marginTop: 4 },
+  profileSectionLabel: {
+    color: '#c084fc',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  profileQARow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  profileQ: { color: '#9ca3af', fontSize: 12, marginBottom: 3 },
+  profileA: { color: '#e5e7eb', fontSize: 15, fontWeight: '500' },
+  profileTagList: { color: '#e5e7eb', fontSize: 14, lineHeight: 20 },
   revealBannerBtn: {
     backgroundColor: '#9333ea',
     paddingHorizontal: 12,

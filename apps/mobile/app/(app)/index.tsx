@@ -62,11 +62,11 @@ export default function ChatTabScreen() {
   const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
   const [loadingMatch, setLoadingMatch] = useState(true);
 
-  // Most recent expired match the user hasn't rated yet — surfaces a
-  // "how'd it go?" prompt on the "no active match" screen so we can
-  // collect quality feedback exactly once per match. Cleared as soon as
-  // they tap thumbs up/down or dismiss.
-  const [rateableMatch, setRateableMatch] = useState<{ id: string; partnerAlias: string } | null>(null);
+  // Up to 2 most-recent expired matches the user hasn't rated yet — the
+  // "no active match" screen prompts them to rate each individually.
+  // Cleared per-match as they tap up/down/skip; realtime match changes
+  // also trigger a re-fetch so newly-expired matches show up right away.
+  const [rateableMatches, setRateableMatches] = useState<Array<{ id: string; partnerAlias: string }>>([]);
 
   const fetchActiveMatch = useCallback(async (uid: string) => {
     const { data: match } = await supabase
@@ -98,10 +98,12 @@ export default function ChatTabScreen() {
     setLoadingMatch(false);
   }, []);
 
-  // Look for a match that expired in the last 48h and hasn't been rated
-  // by this user yet — that's the one we prompt them to rate. Cap at
-  // 48h so we don't nag them about a match from a week ago.
-  const fetchRateableMatch = useCallback(async (uid: string) => {
+  // Look for up to 2 matches that expired in the last 48h and haven't
+  // been rated by this user yet. 2 is intentional — enough to catch a
+  // "you had two matches back-to-back" case, not so many that the
+  // screen becomes a rating survey. Capped at 48h so we don't nag
+  // about a match from a week ago.
+  const fetchRateableMatches = useCallback(async (uid: string) => {
     const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
     const { data: expired } = await supabase
       .from('matches')
@@ -110,10 +112,9 @@ export default function ChatTabScreen() {
       .neq('status', 'active')
       .gte('expires_at', twoDaysAgo)
       .order('expires_at', { ascending: false })
-      .limit(5);
-    if (!expired || expired.length === 0) { setRateableMatch(null); return; }
+      .limit(10);
+    if (!expired || expired.length === 0) { setRateableMatches([]); return; }
 
-    // Which of these have I already rated?
     const ids = expired.map((m) => m.id);
     const { data: rated } = await supabase
       .from('match_ratings')
@@ -121,26 +122,30 @@ export default function ChatTabScreen() {
       .in('match_id', ids);
     const ratedIds = new Set((rated ?? []).map((r) => r.match_id));
 
-    const target = expired.find((m) => !ratedIds.has(m.id));
-    if (!target) { setRateableMatch(null); return; }
+    const unrated = expired.filter((m) => !ratedIds.has(m.id)).slice(0, 2);
+    if (unrated.length === 0) { setRateableMatches([]); return; }
 
-    const partnerId = target.user1_id === uid ? target.user2_id : target.user1_id;
-    const { data: partner } = await supabase
+    const partnerIds = unrated.map((m) => (m.user1_id === uid ? m.user2_id : m.user1_id));
+    const { data: partners } = await supabase
       .from('profiles')
-      .select('display_alias')
-      .eq('id', partnerId)
-      .maybeSingle();
-    setRateableMatch({ id: target.id, partnerAlias: partner?.display_alias ?? 'Mystery Connection' });
+      .select('id, display_alias')
+      .in('id', partnerIds);
+    const nameById = new Map((partners ?? []).map((p) => [p.id, p.display_alias || 'Mystery Connection']));
+
+    setRateableMatches(unrated.map((m) => ({
+      id: m.id,
+      partnerAlias: nameById.get(m.user1_id === uid ? m.user2_id : m.user1_id) || 'Mystery Connection',
+    })));
   }, []);
 
-  const submitRating = async (rating: 'up' | 'down') => {
-    if (!userId || !rateableMatch) return;
-    await supabase.from('match_ratings').insert({
-      match_id: rateableMatch.id,
-      rater_id: userId,
-      rating,
-    });
-    setRateableMatch(null);
+  const submitRating = async (matchId: string, rating: 'up' | 'down') => {
+    if (!userId) return;
+    // Optimistic removal — the card leaves the screen as soon as they tap.
+    setRateableMatches((prev) => prev.filter((m) => m.id !== matchId));
+    await supabase.from('match_ratings').insert({ match_id: matchId, rater_id: userId, rating });
+  };
+  const skipRating = (matchId: string) => {
+    setRateableMatches((prev) => prev.filter((m) => m.id !== matchId));
   };
 
   useEffect(() => {
@@ -167,10 +172,10 @@ export default function ChatTabScreen() {
       }
 
       await fetchActiveMatch(user.id);
-      await fetchRateableMatch(user.id);
+      await fetchRateableMatches(user.id);
     };
     fetchProfile();
-  }, [fetchActiveMatch, fetchRateableMatch]);
+  }, [fetchActiveMatch, fetchRateableMatches]);
 
   // Live updates: if a match appears (top-up matched you while this
   // screen is open) or your active match gets expired, reflect it
@@ -186,7 +191,7 @@ export default function ChatTabScreen() {
         { event: '*', schema: 'public', table: 'matches' },
         () => {
           fetchActiveMatch(userId);
-          fetchRateableMatch(userId);
+          fetchRateableMatches(userId);
         }
       )
       .subscribe();
@@ -194,7 +199,7 @@ export default function ChatTabScreen() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, fetchActiveMatch, fetchRateableMatch]);
+  }, [userId, fetchActiveMatch, fetchRateableMatches]);
 
   useEffect(() => {
     setSecondsLeft(getSecondsUntilMidnight(timezone));
@@ -306,6 +311,30 @@ export default function ChatTabScreen() {
             <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
           </View>
         </View>
+
+        {/* Also render post-match rating prompts here, so a user with a
+            fresh active match still gets asked to rate yesterday's
+            expired one. */}
+        {rateableMatches.map((m) => (
+          <View key={m.id} style={[styles.ratingBox, { marginTop: 20, marginHorizontal: 20 }]}>
+            <Text style={styles.ratingQuestion}>
+              How was your connection with {m.partnerAlias}?
+            </Text>
+            <View style={styles.ratingButtons}>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
+                <Ionicons name="thumbs-up" size={22} color="#86efac" />
+                <Text style={[styles.ratingBtnText, { color: '#86efac' }]}>Good</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
+                <Ionicons name="thumbs-down" size={22} color="#fca5a5" />
+                <Text style={[styles.ratingBtnText, { color: '#fca5a5' }]}>Meh</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.ratingBtn, { flex: 0.6 }]} onPress={() => skipRating(m.id)}>
+                <Text style={[styles.ratingBtnText, { color: '#6b7280' }]}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
       </View>
     );
   }
@@ -351,30 +380,31 @@ export default function ChatTabScreen() {
           <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
         </View>
 
-        {/* Post-match rating prompt — appears once, dismissed on tap. */}
-        {rateableMatch && (
-          <View style={styles.ratingBox}>
+        {/* Post-match rating prompts — up to 2 unrated recent matches,
+            each dismissed independently as you tap up/down/skip. */}
+        {rateableMatches.map((m) => (
+          <View key={m.id} style={styles.ratingBox}>
             <Text style={styles.ratingQuestion}>
-              How was your connection with {rateableMatch.partnerAlias}?
+              How was your connection with {m.partnerAlias}?
             </Text>
             <View style={styles.ratingButtons}>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating('up')}>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
                 <Ionicons name="thumbs-up" size={22} color="#86efac" />
                 <Text style={[styles.ratingBtnText, { color: '#86efac' }]}>Good</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating('down')}>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
                 <Ionicons name="thumbs-down" size={22} color="#fca5a5" />
                 <Text style={[styles.ratingBtnText, { color: '#fca5a5' }]}>Meh</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.ratingBtn, { flex: 0.6 }]}
-                onPress={() => setRateableMatch(null)}
+                onPress={() => skipRating(m.id)}
               >
                 <Text style={[styles.ratingBtnText, { color: '#6b7280' }]}>Skip</Text>
               </TouchableOpacity>
             </View>
           </View>
-        )}
+        ))}
       </View>
     </View>
   );
