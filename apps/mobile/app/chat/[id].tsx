@@ -15,6 +15,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
+import { Picker } from '@react-native-picker/picker'
 import CosmicBackground from '../../components/CosmicBackground'
 import Skeleton from '../../components/Skeleton'
 import { supabase } from '../../lib/supabase'
@@ -28,10 +29,17 @@ type Message = {
   read_at: string | null
 }
 
+type HandleType = 'instagram' | 'snapchat' | 'phone' | 'email' | 'other'
+
+// One row returned by the get_reveals_for_match RPC. handle_value is
+// null for rows the caller hasn't reciprocated the type on — the DB
+// nulls it out via the SECURITY DEFINER function, we don't just hide
+// it in the UI. `revealed` mirrors that but is easier to switch on.
 type ContactReveal = {
   user_id: string
-  handle_type: 'instagram' | 'snapchat' | 'phone' | 'email' | 'other'
-  handle_value: string
+  handle_type: HandleType
+  handle_value: string | null
+  revealed: boolean
 }
 
 const REPORT_CATEGORIES: { value: string; label: string }[] = [
@@ -43,13 +51,65 @@ const REPORT_CATEGORIES: { value: string; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
-const HANDLE_TYPES: { value: ContactReveal['handle_type']; label: string; placeholder: string }[] = [
-  { value: 'instagram', label: 'Instagram', placeholder: '@yourhandle' },
-  { value: 'snapchat', label: 'Snapchat', placeholder: '@yoursnap' },
-  { value: 'phone', label: 'Phone', placeholder: '+1 555 555 5555' },
-  { value: 'email', label: 'Email', placeholder: 'you@example.com' },
-  { value: 'other', label: 'Other', placeholder: 'How to reach you' },
+// Format validators are best-effort — they catch obvious garbage
+// (a phone number under "email", random punctuation, etc.) but they
+// can't confirm the account actually exists or belongs to the person
+// sharing it. That's honor system beyond format; verifying account
+// ownership would need per-platform OAuth (Instagram Basic Display,
+// Snap Kit, etc.) which is a bigger project.
+const HANDLE_TYPES: {
+  value: HandleType
+  label: string
+  emoji: string
+  placeholder: string
+  validate: (raw: string) => string | null // returns error text or null
+}[] = [
+  {
+    value: 'instagram',
+    label: 'Instagram',
+    emoji: '📸',
+    placeholder: '@yourhandle',
+    validate: (raw) => /^@?[a-zA-Z0-9._]{1,30}$/.test(raw.trim())
+      ? null
+      : 'Instagram handles are up to 30 letters/numbers/underscore/period, optionally starting with @.',
+  },
+  {
+    value: 'snapchat',
+    label: 'Snapchat',
+    emoji: '👻',
+    placeholder: '@yoursnap',
+    validate: (raw) => /^@?[a-zA-Z][a-zA-Z0-9._-]{2,14}$/.test(raw.trim())
+      ? null
+      : 'Snapchat usernames are 3–15 characters, start with a letter.',
+  },
+  {
+    value: 'phone',
+    label: 'Phone',
+    emoji: '📱',
+    placeholder: '+1 555 555 5555',
+    validate: (raw) => /^\+?[0-9 \-().]{7,20}$/.test(raw.trim())
+      ? null
+      : 'Enter 7–20 digits, optionally with +, spaces, dashes, or parentheses.',
+  },
+  {
+    value: 'email',
+    label: 'Email',
+    emoji: '📧',
+    placeholder: 'you@example.com',
+    validate: (raw) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim())
+      ? null
+      : "That doesn't look like an email.",
+  },
+  {
+    value: 'other',
+    label: 'Other',
+    emoji: '🔗',
+    placeholder: 'How to reach you',
+    validate: (raw) => raw.trim().length >= 2 ? null : 'Add at least a couple of characters.',
+  },
 ]
+
+const handleMeta = (t: HandleType) => HANDLE_TYPES.find((x) => x.value === t) || HANDLE_TYPES[HANDLE_TYPES.length - 1]
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -97,11 +157,13 @@ export default function ChatScreen() {
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false)
   const [blockBusy, setBlockBusy] = useState(false)
 
-  // Contact reveal — mine + partner's.
-  const [myReveal, setMyReveal] = useState<ContactReveal | null>(null)
-  const [partnerReveal, setPartnerReveal] = useState<ContactReveal | null>(null)
+  // Contact reveals — arrays now, since users can share multiple types
+  // (Instagram + Snap + email) and each type is independently
+  // reciprocated with the partner.
+  const [myReveals, setMyReveals] = useState<ContactReveal[]>([])
+  const [partnerReveals, setPartnerReveals] = useState<ContactReveal[]>([])
   const [revealModalOpen, setRevealModalOpen] = useState(false)
-  const [revealType, setRevealType] = useState<ContactReveal['handle_type']>('instagram')
+  const [revealType, setRevealType] = useState<HandleType>('instagram')
   const [revealValue, setRevealValue] = useState('')
   const [revealBusy, setRevealBusy] = useState(false)
   const [revealError, setRevealError] = useState<string | null>(null)
@@ -308,24 +370,21 @@ export default function ChatScreen() {
 
   const isActive = match?.status === 'active' && !expired
 
-  // ---------- Contact reveal: fetch existing rows on load, and keep
-  // in sync via realtime so the partner's reveal appears the moment
-  // they submit theirs. RLS enforces that you only see the partner's
-  // row once you've also submitted your own — this fetch just returns
-  // an empty array before then, no error.
+  // ---------- Contact reveals: fetch via RPC (returns metadata for
+  // both users' shares, with partner's handle_value nulled where the
+  // caller hasn't reciprocated that specific type — enforced in the
+  // SECURITY DEFINER function, not just here). Keep in sync via
+  // realtime on the raw table so a new share on either side triggers
+  // a re-fetch.
   useEffect(() => {
     if (!id || !userId) return
     const load = async () => {
-      const { data } = await supabase
-        .from('contact_reveals')
-        .select('user_id, handle_type, handle_value')
-        .eq('match_id', id)
-      if (data) {
-        for (const r of data as ContactReveal[]) {
-          if (r.user_id === userId) setMyReveal(r)
-          else setPartnerReveal(r)
-        }
-      }
+      const { data, error } = await supabase
+        .rpc('get_reveals_for_match', { p_match_id: id })
+      if (error) { console.warn('get_reveals_for_match failed:', error); return }
+      const rows = (data ?? []) as ContactReveal[]
+      setMyReveals(rows.filter((r) => r.user_id === userId))
+      setPartnerReveals(rows.filter((r) => r.user_id !== userId))
     }
     load()
 
@@ -342,28 +401,51 @@ export default function ChatScreen() {
 
   const submitReveal = async () => {
     if (!id || !userId) return
-    const value = revealValue.trim()
-    if (!value) return
+    const trimmed = revealValue.trim()
+    if (!trimmed) return
+    // Format check first — no round trip if the input is obviously
+    // wrong for the chosen type.
+    const validationError = handleMeta(revealType).validate(trimmed)
+    if (validationError) { setRevealError(validationError); return }
+
     setRevealBusy(true)
     setRevealError(null)
-    // Upsert on (match_id, user_id) so re-submitting overwrites your
-    // previous choice cleanly.
+    // Upsert on (match, user, type) so re-submitting the SAME type
+    // overwrites your previous value cleanly (a normal "I typed the
+    // wrong handle, fixing it" flow), while different types remain as
+    // separate rows.
     const { error } = await supabase
       .from('contact_reveals')
       .upsert(
-        { match_id: id, user_id: userId, handle_type: revealType, handle_value: value },
-        { onConflict: 'match_id,user_id' }
+        { match_id: id, user_id: userId, handle_type: revealType, handle_value: trimmed },
+        { onConflict: 'match_id,user_id,handle_type' }
       )
     setRevealBusy(false)
     if (error) {
-      // Silent failure was the bug — show what actually went wrong instead
-      // of just closing (or worse: doing nothing).
       console.warn('contact_reveals upsert failed:', error)
       setRevealError(error.message || 'Something went wrong sharing your contact.')
       return
     }
-    setMyReveal({ user_id: userId, handle_type: revealType, handle_value: value })
-    setRevealModalOpen(false)
+    // Reset form for adding another type; realtime will refresh the list.
+    setRevealValue('')
+    setRevealError(null)
+    // Auto-advance to the next unused type as a small nudge to add more.
+    const usedTypes = new Set([...myReveals.map((r) => r.handle_type), revealType])
+    const nextUnused = HANDLE_TYPES.find((t) => !usedTypes.has(t.value))
+    if (nextUnused) setRevealType(nextUnused.value)
+  }
+
+  // Delete one of my shares (RLS allows only my own).
+  const retractReveal = async (handle_type: HandleType) => {
+    if (!id || !userId) return
+    const { error } = await supabase
+      .from('contact_reveals')
+      .delete()
+      .eq('match_id', id)
+      .eq('user_id', userId)
+      .eq('handle_type', handle_type)
+    if (error) console.warn('contact_reveals delete failed:', error)
+    // Realtime + effect above will refresh the arrays.
   }
 
   const submitReport = async () => {
@@ -566,47 +648,84 @@ export default function ChatScreen() {
           }}
         />
 
-        {/* Contact-reveal banner — three states:
-              (1) neither has opted in → "Share your contact?" prompt
-              (2) I opted in, waiting for partner → holding message
-              (3) both opted in → show the partner's handle */}
-        {isActive && (
-          <View style={styles.revealBanner}>
-            {myReveal && partnerReveal ? (
-              <>
-                <Ionicons name="checkmark-circle" size={18} color="#86efac" />
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.revealBannerLabel}>
-                    {match.partnerAlias}'s {partnerReveal.handle_type}:
-                  </Text>
-                  <Text style={styles.revealBannerValue} selectable>
-                    {partnerReveal.handle_value}
-                  </Text>
-                </View>
-              </>
-            ) : myReveal ? (
-              <>
+        {/* Contact-reveal banner. Compact summary — full manage UI lives
+            in the modal. Three cases:
+              (a) Nothing shared on either side → prompt to start
+              (b) I've shared, partner hasn't shared anything → waiting
+              (c) At least one match (both shared same type) → show what
+                  we can see + hint at any of theirs we haven't
+                  reciprocated yet. */}
+        {isActive && (() => {
+          const revealedFromPartner = partnerReveals.filter((r) => r.revealed && r.handle_value)
+          const partnerTypesIHavent = partnerReveals
+            .filter((r) => !r.revealed)
+            .map((r) => r.handle_type)
+          const openManage = () => {
+            setRevealValue('')
+            const usedTypes = new Set(myReveals.map((r) => r.handle_type))
+            const nextUnused = HANDLE_TYPES.find((t) => !usedTypes.has(t.value))
+            setRevealType(nextUnused?.value ?? 'instagram')
+            setRevealError(null)
+            setRevealModalOpen(true)
+          }
+
+          // (a)
+          if (myReveals.length === 0 && partnerReveals.length === 0) {
+            return (
+              <View style={styles.revealBanner}>
+                <Ionicons name="share-social-outline" size={18} color="#c084fc" />
+                <Text style={styles.revealBannerText}>Want to keep chatting past midnight?</Text>
+                <TouchableOpacity style={styles.revealBannerBtn} onPress={openManage}>
+                  <Text style={styles.revealBannerBtnText}>Share contact</Text>
+                </TouchableOpacity>
+              </View>
+            )
+          }
+
+          // (b) I've shared, partner hasn't shared anything at all yet.
+          if (myReveals.length > 0 && partnerReveals.length === 0) {
+            return (
+              <TouchableOpacity style={styles.revealBanner} onPress={openManage}>
                 <Ionicons name="time-outline" size={18} color="#c084fc" />
                 <Text style={styles.revealBannerText}>
                   Shared. Waiting for {match.partnerAlias} to share theirs.
                 </Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="share-social-outline" size={18} color="#c084fc" />
-                <Text style={styles.revealBannerText}>
-                  Want to keep chatting past midnight?
-                </Text>
-                <TouchableOpacity
-                  style={styles.revealBannerBtn}
-                  onPress={() => { setRevealValue(''); setRevealType('instagram'); setRevealError(null); setRevealModalOpen(true) }}
-                >
-                  <Text style={styles.revealBannerBtnText}>Share contact</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
+                <Text style={styles.revealBannerLink}>Manage</Text>
+              </TouchableOpacity>
+            )
+          }
+
+          // (c) At least one side has partial visibility.
+          return (
+            <TouchableOpacity style={styles.revealBanner} onPress={openManage}>
+              <Ionicons name="checkmark-circle" size={18} color="#86efac" />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                {revealedFromPartner.length > 0 ? (
+                  revealedFromPartner.map((r) => (
+                    <Text key={r.handle_type} style={styles.revealBannerValueLine} selectable>
+                      <Text style={styles.revealBannerLabel}>
+                        {handleMeta(r.handle_type).emoji} {handleMeta(r.handle_type).label}: {' '}
+                      </Text>
+                      {r.handle_value}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.revealBannerText}>
+                    You've shared. Add a matching type to unlock theirs.
+                  </Text>
+                )}
+                {partnerTypesIHavent.length > 0 && (
+                  <Text style={styles.revealBannerHint}>
+                    {match.partnerAlias} also shared{' '}
+                    {partnerTypesIHavent.map((t) => handleMeta(t).label).join(', ')}
+                    {' — share yours to unlock.'}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.revealBannerLink}>Manage</Text>
+            </TouchableOpacity>
+          )
+        })()}
 
         {/* Composer */}
         <View style={styles.composer}>
@@ -734,64 +853,108 @@ export default function ChatScreen() {
         </View>
       </Modal>
 
-      {/* Contact-reveal modal */}
+      {/* Contact-reveal modal — manages your list of shared handles.
+          Multiple types allowed (Instagram + Snap + Email…). Each type
+          you share can be individually retracted with the × next to
+          it. Reciprocity is per-type: your Instagram unlocks theirs
+          only if they've also shared Instagram. */}
       <Modal visible={revealModalOpen} transparent animationType="slide" onRequestClose={() => setRevealModalOpen(false)}>
         <View style={styles.menuBackdrop}>
           <View style={[styles.menuSheet, { padding: 20 }]}>
             <Text style={styles.sheetTitle}>Share your contact</Text>
             <Text style={styles.sheetSubtitle}>
-              Only shown to {match.partnerAlias} once they share theirs too. You can update or take back the share any time.
+              Share as many types as you like. Each is only revealed to {match.partnerAlias} once they share that same type too.
             </Text>
-            <Text style={styles.sheetHelp}>Pick one — the type they'll get from you.</Text>
-            <View style={styles.handleTypeRow}>
-              {HANDLE_TYPES.map((t) => (
-                <TouchableOpacity
-                  key={t.value}
-                  style={[styles.handleTypeChip, revealType === t.value && styles.handleTypeChipActive]}
-                  onPress={() => {
-                    // Clear the value on chip switch so it's obvious the
-                    // field belongs to the newly-picked type (previously
-                    // an email typed under "Email" would carry over as if
-                    // it belonged to "Instagram").
-                    if (t.value !== revealType) {
-                      setRevealValue('')
-                      setRevealError(null)
-                    }
-                    setRevealType(t.value)
-                  }}
-                >
-                  <Text style={[styles.handleTypeText, revealType === t.value && { color: '#fff' }]}>{t.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TextInput
-              style={styles.reportInput}
-              placeholder={HANDLE_TYPES.find(t => t.value === revealType)?.placeholder}
-              placeholderTextColor="#6b7280"
-              value={revealValue}
-              onChangeText={(t) => { setRevealValue(t); if (revealError) setRevealError(null) }}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType={revealType === 'phone' ? 'phone-pad' : revealType === 'email' ? 'email-address' : 'default'}
-              maxLength={200}
-            />
-            {revealError && (
-              <Text style={{ color: '#fca5a5', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-                {revealError}
-              </Text>
+
+            {/* My existing shares — each with a × to take back. */}
+            {myReveals.length > 0 && (
+              <>
+                <Text style={styles.sheetHelp}>You're sharing:</Text>
+                {myReveals.map((r) => (
+                  <View key={r.handle_type} style={styles.mineRow}>
+                    <Text style={styles.mineRowEmoji}>{handleMeta(r.handle_type).emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.mineRowLabel}>{handleMeta(r.handle_type).label}</Text>
+                      <Text style={styles.mineRowValue} numberOfLines={1}>{r.handle_value}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.mineRowX}
+                      onPress={() => retractReveal(r.handle_type)}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="close-circle" size={22} color="#6b7280" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
             )}
-            <View style={styles.sheetActions}>
-              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setRevealModalOpen(false)}>
-                <Text style={styles.sheetCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sheetPrimaryBtn, (revealBusy || !revealValue.trim()) && { opacity: 0.5 }]}
-                onPress={submitReveal}
-                disabled={revealBusy || !revealValue.trim()}
-              >
-                {revealBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Share</Text>}
-              </TouchableOpacity>
-            </View>
+
+            {/* Add-another form — only shown when there's at least one
+                type left to add. */}
+            {(() => {
+              const usedTypes = new Set(myReveals.map((r) => r.handle_type))
+              const availableTypes = HANDLE_TYPES.filter((t) => !usedTypes.has(t.value))
+              const currentIsUsed = usedTypes.has(revealType)
+              // If the currently-selected type is already shared, snap
+              // the picker to the first available type so the form
+              // isn't in a broken state.
+              if (currentIsUsed && availableTypes.length > 0) {
+                setTimeout(() => setRevealType(availableTypes[0].value), 0)
+              }
+              if (availableTypes.length === 0) {
+                return (
+                  <Text style={styles.sheetHelp}>You've shared every handle type. Take one back to change it.</Text>
+                )
+              }
+              return (
+                <>
+                  <Text style={[styles.sheetHelp, { marginTop: 12 }]}>Add another:</Text>
+                  <View style={styles.pickerBox}>
+                    <Picker
+                      selectedValue={currentIsUsed ? availableTypes[0].value : revealType}
+                      onValueChange={(v) => {
+                        setRevealType(v as HandleType)
+                        setRevealValue('')
+                        setRevealError(null)
+                      }}
+                      style={styles.picker}
+                      itemStyle={{ color: '#fff' }}
+                    >
+                      {availableTypes.map((t) => (
+                        <Picker.Item key={t.value} label={`${t.emoji}  ${t.label}`} value={t.value} />
+                      ))}
+                    </Picker>
+                  </View>
+                  <TextInput
+                    style={styles.reportInput}
+                    placeholder={handleMeta(revealType).placeholder}
+                    placeholderTextColor="#6b7280"
+                    value={revealValue}
+                    onChangeText={(t) => { setRevealValue(t); if (revealError) setRevealError(null) }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType={revealType === 'phone' ? 'phone-pad' : revealType === 'email' ? 'email-address' : 'default'}
+                    maxLength={200}
+                  />
+                  {revealError && (
+                    <Text style={{ color: '#fca5a5', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                      {revealError}
+                    </Text>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.sheetPrimaryBtn, { marginTop: 12 }, (revealBusy || !revealValue.trim()) && { opacity: 0.5 }]}
+                    onPress={submitReveal}
+                    disabled={revealBusy || !revealValue.trim()}
+                  >
+                    {revealBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Add</Text>}
+                  </TouchableOpacity>
+                </>
+              )
+            })()}
+
+            <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setRevealModalOpen(false)}>
+              <Text style={styles.sheetCancelText}>Done</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1009,6 +1172,9 @@ const styles = StyleSheet.create({
   revealBannerText: { flex: 1, color: '#e5e7eb', fontSize: 13 },
   revealBannerLabel: { color: '#9ca3af', fontSize: 12 },
   revealBannerValue: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  revealBannerValueLine: { color: '#fff', fontSize: 14, lineHeight: 20 },
+  revealBannerHint: { color: '#c084fc', fontSize: 12, marginTop: 4, fontStyle: 'italic' },
+  revealBannerLink: { color: '#c084fc', fontSize: 12, fontWeight: '700', marginLeft: 8 },
   revealBannerBtn: {
     backgroundColor: '#9333ea',
     paddingHorizontal: 12,
@@ -1016,6 +1182,36 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   revealBannerBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // "Your current shares" rows inside the reveal modal
+  mineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(17, 24, 39, 0.5)',
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  mineRowEmoji: { fontSize: 20 },
+  mineRowLabel: { color: '#9ca3af', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  mineRowValue: { color: '#fff', fontSize: 15, fontWeight: '500' },
+  mineRowX: { padding: 4 },
+
+  pickerBox: {
+    backgroundColor: 'rgba(17, 24, 39, 0.8)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  picker: Platform.OS === 'web'
+    ? ({ color: '#fff', height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0, backgroundColor: 'transparent' } as any)
+    : ({ color: '#fff' } as any),
 
   // Menu / report / block / reveal sheets
   menuBackdrop: {
