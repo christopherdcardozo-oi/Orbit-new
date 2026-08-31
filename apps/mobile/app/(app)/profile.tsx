@@ -99,7 +99,19 @@ export default function ProfileTabScreen() {
       console.warn('Sign out failed:', error.message);
       return;
     }
-    router.replace('/');
+    if (Platform.OS === 'web') {
+      // router.replace('/') here races the root layout's own
+      // session-driven redirect effect: if that effect re-runs (segments
+      // just changed) before its `session` closure has caught up to the
+      // signOut that just happened, it still sees the old logged-in
+      // session and immediately routes straight back to /(app), undoing
+      // this navigation — landing back on this screen looking unchanged.
+      // A hard reload sidesteps the race entirely: the app boots fresh,
+      // calls getSession(), gets null, and never has stale state to race.
+      window.location.href = '/';
+    } else {
+      router.replace('/');
+    }
   };
 
   const handleDeleteAccount = () => {
