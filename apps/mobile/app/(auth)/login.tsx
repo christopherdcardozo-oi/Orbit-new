@@ -1,22 +1,26 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
 import { Link, useRouter } from 'expo-router'
+import { Picker } from '@react-native-picker/picker'
 import { supabase } from '../../lib/supabase'
+import { useActiveUniversities } from '../../lib/universities'
 
 import CosmicBackground from '../../components/CosmicBackground'
 
-// Only one campus is live right now, so there's nothing to pick — showing
-// it as a locked field avoids the empty/blank-looking dropdown you get
-// from a single-option <Picker> on web, and there's no way to land on the
-// wrong campus by accident. Reintroduce a real Picker here once a second
-// university goes live in university_config.
-const UNIVERSITY_LABEL = 'Iowa State University'
-
 export default function LoginScreen() {
   const router = useRouter()
-  const [selectedUniversity] = useState('iastate.edu')
+  const { universities, loading: universitiesLoading } = useActiveUniversities()
+  const [selectedUniversity, setSelectedUniversity] = useState('')
   const [fullEmail, setFullEmail] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Default to the first active campus once the list loads. If a second
+  // campus goes active later, the Picker below lets people actually choose.
+  useEffect(() => {
+    if (!selectedUniversity && universities.length > 0) {
+      setSelectedUniversity(universities[0].email_domain)
+    }
+  }, [universities, selectedUniversity])
 
   // Inline error state instead of alert()/window.alert(): alert() is
   // browser-native on web (easy to miss, blocked by some automation/
@@ -45,7 +49,9 @@ export default function LoginScreen() {
     setLoading(true)
 
     // Emails matching the picked campus are always fine; anything else
-    // has to be explicitly allowlisted server-side (admin_allowlist).
+    // has to be explicitly allowlisted server-side (admin_allowlist) or
+    // match some OTHER active campus (is_email_allowed checks the full
+    // active list, not just whichever one is selected in the picker).
     if (!emailStr.endsWith(`@${selectedUniversity}`)) {
       const { data: allowed, error: allowError } = await supabase.rpc(
         'is_email_allowed',
@@ -123,8 +129,24 @@ export default function LoginScreen() {
           <>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>University</Text>
-              <View style={styles.lockedField}>
-                <Text style={styles.lockedFieldText}>{UNIVERSITY_LABEL}</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={selectedUniversity}
+                  onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setNoAccountFound(false) }}
+                  style={styles.picker}
+                  itemStyle={styles.pickerItem}
+                  enabled={!universitiesLoading && universities.length > 0}
+                >
+                  {universitiesLoading ? (
+                    <Picker.Item label="Loading campuses…" value="" />
+                  ) : universities.length === 0 ? (
+                    <Picker.Item label="No campuses available" value="" />
+                  ) : (
+                    universities.map((u) => (
+                      <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
+                    ))
+                  )}
+                </Picker>
               </View>
             </View>
 
@@ -132,7 +154,7 @@ export default function LoginScreen() {
               <Text style={styles.label}>University Email</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. cy@iastate.edu"
+                placeholder={selectedUniversity ? `e.g. netid@${selectedUniversity}` : 'e.g. netid@youruniversity.edu'}
                 placeholderTextColor="#6b7280"
                 value={fullEmail}
                 onChangeText={(text) => { setFullEmail(text); setErrorMessage(''); setNoAccountFound(false) }}
@@ -140,6 +162,11 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 keyboardType="email-address"
               />
+              <Text style={styles.helpText}>
+                {selectedUniversity
+                  ? `Use your @${selectedUniversity} email, or an approved admin/test email.`
+                  : 'Select your campus above.'}
+              </Text>
             </View>
 
             {errorMessage ? (
@@ -253,16 +280,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  lockedField: {
+  helpText: {
+    color: '#6b7280',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  pickerContainer: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#374151',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    overflow: 'hidden',
   },
-  lockedFieldText: {
+  // On web, Picker renders as a plain <select>: it needs an explicit
+  // height + fontSize to match TextInput's box, and borderWidth: 0 so
+  // its own default border doesn't double up with pickerContainer's.
+  // Native iOS/Android are left untouched (see the matching comment in
+  // app/(app)/profile.tsx for the full explanation).
+  picker: {
+    backgroundColor: 'transparent',
     color: '#fff',
+    ...(Platform.OS === 'web'
+      ? { height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0 }
+      : {}),
+  },
+  pickerItem: {
+    color: '#fff',
+    backgroundColor: '#030712',
     fontSize: 16,
   },
   textInput: {

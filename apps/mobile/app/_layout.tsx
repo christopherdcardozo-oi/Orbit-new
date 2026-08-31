@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native'
 import { registerForPushNotificationsAsync, savePushToken } from '../lib/notifications'
+import InstallHint from '../components/InstallHint'
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
@@ -84,6 +85,7 @@ export default function RootLayout() {
     <ThemeProvider value={CustomDarkTheme}>
       <View style={styles.rootContainer}>
         <View style={[styles.appContainer, isWeb && styles.webContainer]}>
+          <InstallHint />
           <Slot />
         </View>
       </View>

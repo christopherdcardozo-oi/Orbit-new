@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
 import { Link, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
@@ -6,20 +6,25 @@ import { Picker } from '@react-native-picker/picker'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
+import { useActiveUniversities } from '../../lib/universities'
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 const GENDERS = ['Male', 'Female', 'Other'];
-
-// Only one campus is live right now — see the matching comment in
-// app/(auth)/login.tsx.
-const UNIVERSITY_LABEL = 'Iowa State University'
 
 type Step = 'details' | 'code' | 'personality' | 'reveal'
 
 export default function SignupScreen() {
   const router = useRouter()
-  const [selectedUniversity] = useState('iastate.edu')
+  const { universities, loading: universitiesLoading } = useActiveUniversities()
+  const [selectedUniversity, setSelectedUniversity] = useState('')
   const [fullEmail, setFullEmail] = useState('')
+
+  // Default to the first active campus once the list loads.
+  useEffect(() => {
+    if (!selectedUniversity && universities.length > 0) {
+      setSelectedUniversity(universities[0].email_domain)
+    }
+  }, [universities, selectedUniversity])
 
   // Profile details
   const [gender, setGender] = useState('Male')
@@ -216,8 +221,24 @@ export default function SignupScreen() {
             <>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>University</Text>
-                <View style={styles.lockedField}>
-                  <Text style={styles.lockedFieldText}>{UNIVERSITY_LABEL}</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={selectedUniversity}
+                    onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setAccountExists(false) }}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                    enabled={!universitiesLoading && universities.length > 0}
+                  >
+                    {universitiesLoading ? (
+                      <Picker.Item label="Loading campuses…" value="" />
+                    ) : universities.length === 0 ? (
+                      <Picker.Item label="No campuses available" value="" />
+                    ) : (
+                      universities.map((u) => (
+                        <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
+                      ))
+                    )}
+                  </Picker>
                 </View>
               </View>
 
@@ -225,7 +246,7 @@ export default function SignupScreen() {
                 <Text style={styles.label}>University Email</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. cy@iastate.edu"
+                  placeholder={selectedUniversity ? `e.g. netid@${selectedUniversity}` : 'e.g. netid@youruniversity.edu'}
                   placeholderTextColor="#6b7280"
                   value={fullEmail}
                   onChangeText={(text) => { setFullEmail(text); setErrorMessage(''); setAccountExists(false) }}
@@ -233,6 +254,11 @@ export default function SignupScreen() {
                   autoCorrect={false}
                   keyboardType="email-address"
                 />
+                <Text style={styles.helpText}>
+                  {selectedUniversity
+                    ? `Use your @${selectedUniversity} email, or an approved admin/test email.`
+                    : 'Select your campus above.'}
+                </Text>
               </View>
 
               <View style={styles.inputGroup}>
@@ -437,17 +463,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  lockedField: {
-    backgroundColor: 'rgba(3, 7, 18, 0.5)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#374151',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  lockedFieldText: {
-    color: '#fff',
-    fontSize: 16,
+  helpText: {
+    color: '#6b7280',
+    fontSize: 12,
+    marginTop: 6,
   },
   pickerContainer: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',

@@ -1,14 +1,35 @@
-// Daily matchmaking cron for Orbit — Supabase Edge Function port of the
-// previous Next.js /api/cron/reset-matches route (apps/web/…) so the whole
-// backend loop now lives inside Supabase and nothing is on Vercel.
+// Matchmaking for Orbit — Supabase Edge Function, reached two different
+// ways for two different jobs:
 //
-// Schedule: called once a day at 00:00 UTC by pg_cron (see
-// supabase/migrations/007_matchmaking_cron.sql).
+//   1. pg_cron, every 15 min, empty body {} (see
+//      supabase/migrations/014_frequent_matchmaking_cron.sql). Checks
+//      every active campus: did we just cross THAT campus's real local
+//      midnight (per its university_config.timezone)? If yes, expire its
+//      active matches and fresh-match everyone active there. If no,
+//      does nothing — this path never does top-up matching, and never
+//      runs more often than every 15 min, since a full-campus reset is
+//      the only thing that's actually time-triggered.
+//
+//   2. A Postgres trigger, body { mode: 'topup', domain }, fired once,
+//      the instant a specific user finishes onboarding (see migration
+//      015_instant_topup_on_signup.sql — tied to their personality
+//      answers being saved, not raw account creation, so nobody gets
+//      matched on a still-blank profile). Tries to pair just that one
+//      campus's currently-unmatched active users, right now — unless
+//      it's within 2 hours of that campus's next reset, in which case
+//      it skips (not enough time left to make a new match worth it).
+//      Never resets anyone — only the cron does that.
+//
+// This design replaces an earlier one where a single once-a-day UTC cron
+// did both jobs, which had two real bugs: (1) it assumed UTC midnight ==
+// every campus's local midnight, true only for UTC+0 — Iowa State
+// (America/Chicago) was actually resetting matches ~5-6 hours before its
+// real local midnight; (2) mid-day signups sat unmatched until the next
+// full daily cycle instead of being matched right away.
 //
 // Auth: verify_jwt is disabled at deploy time; instead we check a shared
-// secret in the Authorization header. Same pattern the Next.js version
-// used — the cron secret is set as a function env var and included in the
-// pg_cron call.
+// secret in the Authorization header, set as a function env var and
+// included in both the pg_cron call and the trigger's net.http_post call.
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
@@ -28,11 +49,45 @@ type Profile = {
   fcm_token: string | null; // actually holds an Expo push token, see notes
 };
 
-type MatchmakingResults = {
+type UniversityConfig = {
+  email_domain: string;
+  timezone: string | null;
+};
+
+type CampusResult = {
+  domain: string;
+  mode: 'reset' | 'topup' | 'skipped';
   matched: number;
   oddManOut: string[];
   errors: string[];
 };
+
+type MatchmakingResults = {
+  campuses: CampusResult[];
+};
+
+// ---------- Time helpers ----------
+
+// How many seconds remain until this timezone's next local midnight.
+// Ported from apps/mobile/app/(app)/index.tsx's countdown — same approach,
+// duplicated here because this runs in Deno, not the RN bundle.
+function getSecondsUntilMidnight(timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  const hour = get('hour') % 24; // hour12:false reports the 00:00:00 instant as "24"
+  const minute = get('minute');
+  const second = get('second');
+
+  const elapsed = hour * 3600 + minute * 60 + second;
+  return 86400 - elapsed;
+}
 
 // ---------- Helpers ----------
 
@@ -65,11 +120,6 @@ function pickRandom<T>(arr: T[]): T {
 //   +1 same major           — a nice-to-have, not chosen as strongly as
 //                              hobbies/personality (people don't sign up
 //                              *for* their major the way they pick hobbies).
-// No normalization/caps beyond that — profiles with more populated fields
-// naturally have more to score on, which is fine: it rewards a completed
-// profile with better matches rather than penalizing a sparse one (a
-// sparse profile just scores 0 against everyone and falls back to the
-// shuffle order, same as today's fully-random behavior).
 function compatibilityScore(a: Profile, b: Profile): number {
   let score = 0;
 
@@ -98,59 +148,163 @@ function compatibilityScore(a: Profile, b: Profile): number {
   return score;
 }
 
-// Port of apps/web/lib/matching/icebreaker.ts — kept byte-for-byte
-// equivalent so day-to-day icebreaker text doesn't change with the switch.
-function generateIcebreaker(a: Profile, b: Profile): string {
+// Short topic phrases for each personality question, matching
+// apps/mobile/lib/personality.ts BY INDEX. Duplicated here (not
+// imported) because this edge function deploys as a standalone file
+// bundle, not the whole repo — keep in sync by hand if that file's
+// question order/count ever changes.
+const PERSONALITY_TOPICS = [
+  'how you two recharge',
+  'how you two make big decisions',
+  'how you two approach daily life',
+  'your general outlook',
+];
+
+type Signal =
+  | { kind: 'personality'; topic: string; answer: string }
+  | { kind: 'hobby'; value: string }
+  | { kind: 'activity'; value: string }
+  | { kind: 'majorSame'; value: string }
+  | { kind: 'majorDifferent'; a: string; b: string }
+  | { kind: 'year'; value: string };
+
+// Detects every kind of overlap between two profiles (not just the
+// first one found), so generateIcebreaker can lead with the strongest
+// signal and still mention a second one if there is one — instead of
+// only ever revealing a single axis of "what you have in common."
+function detectSignals(a: Profile, b: Profile): Signal[] {
+  const signals: Signal[] = [];
+
+  const personalityA = a.personality ?? [];
+  const personalityB = b.personality ?? [];
+  for (let i = 0; i < Math.min(personalityA.length, personalityB.length); i++) {
+    if (personalityA[i] && personalityA[i] === personalityB[i]) {
+      signals.push({
+        kind: 'personality',
+        topic: PERSONALITY_TOPICS[i] ?? 'this one thing',
+        answer: personalityA[i],
+      });
+      break; // one personality mention is plenty even if several match
+    }
+  }
+
   const hobbiesA = a.hobbies ?? [];
   const hobbiesB = b.hobbies ?? [];
-  const sharedHobbies = hobbiesA.filter((h) => hobbiesB.includes(h));
+  const sharedHobby = hobbiesA.find((h) => hobbiesB.includes(h));
+  if (sharedHobby) signals.push({ kind: 'hobby', value: sharedHobby });
 
   const activitiesA = a.activities ?? [];
   const activitiesB = b.activities ?? [];
-  const sharedActivities = activitiesA.filter((x) => activitiesB.includes(x));
-
-  const sameMajor = a.major && b.major && a.major === b.major;
-  const majorA = a.major ?? 'your major';
-  const majorB = b.major ?? 'their major';
-
-  if (sharedHobbies.length > 0) {
-    const hobby = sharedHobbies[0];
-    return pickRandom([
-      `🎯 Plot twist — you both love ${hobby}! What got you into it?`,
-      `✨ Hidden connection: ${hobby} fans unite! What's your hot take on it?`,
-      `🔥 You both listed ${hobby}. If you could do it anywhere in the world, where?`,
-    ]);
-  }
-
-  if (sharedActivities.length > 0) {
-    const activity = sharedActivities[0];
-    return pickRandom([
-      `🏛️ Campus connection: you're both involved in ${activity}. What's the best part?`,
-      `🎪 Small world — ${activity} brought you both here. What's your favorite memory from it?`,
-    ]);
-  }
-
-  if (sameMajor && a.major) {
-    const major = a.major;
-    return pickRandom([
-      `📚 You're both studying ${major}! What class has been your favorite so far?`,
-      `🧠 Fellow ${major} majors! What made you choose this path?`,
-    ]);
-  }
+  const sharedActivity = activitiesA.find((x) => activitiesB.includes(x));
+  if (sharedActivity) signals.push({ kind: 'activity', value: sharedActivity });
 
   if (a.major && b.major) {
+    if (a.major === b.major) {
+      signals.push({ kind: 'majorSame', value: a.major });
+    } else {
+      signals.push({ kind: 'majorDifferent', a: a.major, b: b.major });
+    }
+  }
+
+  if (a.year_in_school && b.year_in_school && a.year_in_school === b.year_in_school) {
+    signals.push({ kind: 'year', value: a.year_in_school });
+  }
+
+  return signals;
+}
+
+// Higher-priority signals lead the icebreaker; lower ones only ever
+// show up as the trailing "also, ..." sentence. Personality leads
+// because it's the most deliberate thing anyone tells us about
+// themselves (a whole dedicated onboarding step), same reasoning as
+// its weight in compatibilityScore().
+const SIGNAL_PRIORITY: Signal['kind'][] = [
+  'personality',
+  'hobby',
+  'activity',
+  'majorSame',
+  'majorDifferent',
+  'year',
+];
+
+function primaryLine(s: Signal): string {
+  switch (s.kind) {
+    case 'personality':
+      return pickRandom([
+        `🧠 You're both "${s.answer}" on ${s.topic} — that's not nothing. What's a moment that proved it?`,
+        `✨ Same wavelength: you both said "${s.answer}" for ${s.topic}. Does that track with how people describe you?`,
+        `🔮 Turns out you're both "${s.answer}" about ${s.topic}. Who's more extreme about it?`,
+      ]);
+    case 'hobby':
+      return pickRandom([
+        `🎯 Plot twist — you both love ${s.value}! What got you into it?`,
+        `✨ Hidden connection: ${s.value} fans unite! What's your hot take on it?`,
+        `🔥 You both listed ${s.value}. If you could do it anywhere in the world, where?`,
+        `💫 ${s.value} people, both of you. What's your best ${s.value} memory?`,
+      ]);
+    case 'activity':
+      return pickRandom([
+        `🏛️ Campus connection: you're both involved in ${s.value}. What's the best part?`,
+        `🎪 Small world — ${s.value} brought you both here. What's your favorite memory from it?`,
+        `🌠 ${s.value} squad reporting in — what drew you to it?`,
+      ]);
+    case 'majorSame':
+      return pickRandom([
+        `📚 You're both studying ${s.value}! What class has been your favorite so far?`,
+        `🧠 Fellow ${s.value} majors! What made you choose this path?`,
+        `🛰️ Two ${s.value} minds in one match — team up on a project, what would you build?`,
+      ]);
+    case 'majorDifferent':
+      return pickRandom([
+        `🌈 One of you studies ${s.a}, the other ${s.b}. What's something from your field that would blow the other's mind?`,
+        `🔬 ${s.a} meets ${s.b} — what invention would you create together?`,
+        `🪐 ${s.a} + ${s.b} — that's a hackathon team waiting to happen.`,
+      ]);
+    case 'year':
+      return pickRandom([
+        `🌟 Both ${s.value}s — how's that chapter going for you?`,
+        `🎓 Two ${s.value}s crossing paths. Any survival tips for each other?`,
+      ]);
+  }
+}
+
+function secondaryClause(s: Signal): string {
+  switch (s.kind) {
+    case 'personality':
+      return ` You also both said "${s.answer}" about ${s.topic}.`;
+    case 'hobby':
+      return ` You're also both into ${s.value}.`;
+    case 'activity':
+      return ` Bonus: you're both in ${s.value} too.`;
+    case 'majorSame':
+      return ` Also, you're both ${s.value} majors.`;
+    case 'majorDifferent':
+      return ` Also: ${s.a} and ${s.b} — different worlds, same match.`;
+    case 'year':
+      return ` Both ${s.value}s, too.`;
+  }
+}
+
+function generateIcebreaker(a: Profile, b: Profile): string {
+  const signals = detectSignals(a, b);
+
+  if (signals.length === 0) {
     return pickRandom([
-      `🌈 One of you studies ${majorA}, the other ${majorB}. What's something from your field that would blow the other's mind?`,
-      `🔬 ${majorA} meets ${majorB} — what invention would you create together?`,
+      "🌌 Two strangers in the cosmos — what's the most surprising thing about you?",
+      '🎲 The universe paired you tonight! What\'s something you\'ve never told anyone?',
+      '🚀 Fresh connection! If you could have dinner with anyone, living or dead, who?',
+      "💫 Mystery match! What's the last thing that genuinely made you laugh?",
+      "🛸 No overlap on paper, infinite possibilities in person. Ask them your own weird icebreaker.",
     ]);
   }
 
-  return pickRandom([
-    "🌌 Two strangers in the cosmos — what's the most surprising thing about you?",
-    '🎲 The universe paired you tonight! What\'s something you\'ve never told anyone?',
-    '🚀 Fresh connection! If you could have dinner with anyone, living or dead, who?',
-    "💫 Mystery match! What's the last thing that genuinely made you laugh?",
-  ]);
+  const byPriority = [...signals].sort(
+    (x, y) => SIGNAL_PRIORITY.indexOf(x.kind) - SIGNAL_PRIORITY.indexOf(y.kind),
+  );
+  const primary = byPriority[0];
+  const secondary = byPriority.find((s) => s.kind !== primary.kind);
+
+  return primaryLine(primary) + (secondary ? secondaryClause(secondary) : '');
 }
 
 // Fire-and-log-only Expo push. Failures never abort the batch.
@@ -175,163 +329,318 @@ async function sendPushNotification(
   }
 }
 
-// ---------- Core matchmaking ----------
-// Compatibility-weighted: within each campus, users are paired by highest
-// compatibilityScore() among still-eligible (not recently matched)
-// candidates, not by first-available. See compatibilityScore() above for
-// the exact weighting.
+// ---------- Per-campus matchmaking ----------
 
-async function runMatchmaking(supabase: SupabaseClient): Promise<MatchmakingResults> {
-  const results: MatchmakingResults = { matched: 0, oddManOut: [], errors: [] };
+const RESET_WINDOW_SECONDS = 15 * 60; // matches the cron's 15-minute tick
+const SKIP_WINDOW_SECONDS = 2 * 60 * 60; // don't start new matches this close to reset
 
-  const { data: profiles, error: profileError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('is_active', true);
+// Two call sites, two different jobs — never both at once:
+//   cron tick        → { allowReset: true,  allowTopup: false }
+//     Only ever checks "did we just cross this campus's local midnight?"
+//     If yes: expire + fresh-match everyone. If no: do nothing — top-up
+//     is handled instantly by the on-profile-onboarding-complete trigger
+//     instead of being polled for here (see migration 015).
+//   onboarding trigger → { allowReset: false, allowTopup: true }
+//     Fires once, right when a specific user finishes signup. Tries to
+//     top-up-match just that campus, right now, unless it's within
+//     SKIP_WINDOW_SECONDS of that campus's next reset. Never triggers a
+//     mass reset — only the cron does that.
+async function runMatchmakingForCampus(
+  supabase: SupabaseClient,
+  university: UniversityConfig,
+  domainProfiles: Profile[],
+  options: { allowReset: boolean; allowTopup: boolean },
+): Promise<CampusResult> {
+  const domain = university.email_domain;
+  const result: CampusResult = { domain, mode: 'skipped', matched: 0, oddManOut: [], errors: [] };
 
-  if (profileError || !profiles) {
-    results.errors.push(`Failed to fetch profiles: ${profileError?.message ?? 'Unknown error'}`);
-    return results;
+  if (domainProfiles.length === 0) {
+    return result;
   }
 
-  const domains = new Set((profiles as Profile[]).map((p) => p.email_domain));
+  const tz = university.timezone || 'America/Chicago';
+  const secondsUntilMidnight = getSecondsUntilMidnight(tz);
+  const secondsSinceMidnight = 86400 - secondsUntilMidnight;
 
-  const allNewMatches: Array<{
+  const justPassedMidnight = options.allowReset && secondsSinceMidnight < RESET_WINDOW_SECONDS;
+
+  const domainProfileIds = domainProfiles.map((p) => p.id);
+
+  if (justPassedMidnight) {
+    // Daily reset: expire this campus's active matches so everyone is
+    // eligible for a fresh match today. Scoped to this campus's profile
+    // ids only — other campuses' matches are untouched.
+    const { error: expireError } = await supabase
+      .from('matches')
+      .update({ status: 'expired' })
+      .eq('status', 'active')
+      .in('user1_id', domainProfileIds);
+    if (expireError) {
+      result.errors.push(`Failed to expire matches for ${domain}: ${expireError.message}`);
+      return result;
+    }
+    result.mode = 'reset';
+  } else if (!options.allowTopup) {
+    // Cron tick, not in the reset window — nothing to do here. Top-up is
+    // event-driven now.
+    result.mode = 'skipped';
+    return result;
+  } else if (secondsUntilMidnight <= SKIP_WINDOW_SECONDS) {
+    // Onboarding trigger, but too close to this campus's reset to bother
+    // starting a new match that would just get expired shortly after.
+    result.mode = 'skipped';
+    return result;
+  } else {
+    result.mode = 'topup';
+  }
+
+  // Who currently has an active match? (Correct in both modes: right
+  // after a reset this is empty since we just expired everyone; in
+  // top-up mode it reflects real in-progress matches.)
+  const { data: activeMatches, error: activeError } = await supabase
+    .from('matches')
+    .select('user1_id, user2_id')
+    .eq('status', 'active')
+    .in('user1_id', domainProfileIds);
+
+  if (activeError) {
+    result.errors.push(`Failed to fetch active matches for ${domain}: ${activeError.message}`);
+    return result;
+  }
+
+  const alreadyMatchedIds = new Set<string>();
+  for (const m of activeMatches ?? []) {
+    alreadyMatchedIds.add(m.user1_id);
+    alreadyMatchedIds.add(m.user2_id);
+  }
+
+  const eligibleProfiles = domainProfiles.filter((p) => !alreadyMatchedIds.has(p.id));
+  if (eligibleProfiles.length < 2) {
+    result.oddManOut = eligibleProfiles.map((p) => p.id);
+    return result;
+  }
+
+  // No-repeat window: 30 days.
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const { data: history, error: historyError } = await supabase
+    .from('match_history')
+    .select('user1_id, user2_id')
+    .gte('matched_at', thirtyDaysAgo.toISOString().split('T')[0]);
+
+  if (historyError) {
+    result.errors.push(`Failed to fetch history for ${domain}: ${historyError.message}`);
+    return result;
+  }
+
+  const historySet = new Set<string>();
+  for (const h of history ?? []) {
+    historySet.add([h.user1_id, h.user2_id].sort().join('_'));
+  }
+
+  // Rematch window: pairs older than 14 days are eligible again.
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+  const { data: oldHistory } = await supabase
+    .from('match_history')
+    .select('user1_id, user2_id')
+    .lte('matched_at', fourteenDaysAgo.toISOString().split('T')[0]);
+
+  const allowedHistorySet = new Set<string>();
+  for (const h of oldHistory ?? []) {
+    allowedHistorySet.add([h.user1_id, h.user2_id].sort().join('_'));
+  }
+
+  // Shuffled so tie-breaking (equal scores, or nobody has any signal in
+  // common) still feels random. Within that shuffle order, each unmatched
+  // user picks the highest-scoring still-available, not-recently-matched
+  // partner — greedy, not a global optimum, but means people with real
+  // overlap (personality/hobbies) reliably find each other.
+  const shuffled = fisherYatesShuffle(eligibleProfiles);
+  const matched = new Set<string>();
+
+  // expires_at for every match created this tick = the UTC instant of
+  // THIS campus's next local midnight — not the server clock's midnight
+  // (Deno's runtime is UTC, so the old `new Date(); setHours(24,0,0,0)`
+  // silently computed UTC midnight regardless of the campus's real
+  // timezone).
+  const expiresAt = new Date(Date.now() + secondsUntilMidnight * 1000);
+
+  const newMatches: Array<{
     user1_id: string;
     user2_id: string;
     status: 'active';
     icebreaker: string;
     expires_at: string;
   }> = [];
-  const allNewHistory: Array<{ user1_id: string; user2_id: string }> = [];
-  const notificationsToSend: Array<{ token: string; title: string; body: string }> = [];
+  const newHistory: Array<{ user1_id: string; user2_id: string }> = [];
+  const notifications: Array<{ token: string; title: string; body: string }> = [];
 
-  for (const domain of domains) {
-    const domainProfiles = (profiles as Profile[]).filter((p) => p.email_domain === domain);
+  for (let i = 0; i < shuffled.length; i++) {
+    const userA = shuffled[i];
+    if (matched.has(userA.id)) continue;
 
-    // No-repeat window: 30 days.
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    let foundMatch: Profile | null = null;
+    let bestScore = -1;
+    for (let j = i + 1; j < shuffled.length; j++) {
+      const userB = shuffled[j];
+      if (matched.has(userB.id)) continue;
 
-    const { data: history, error: historyError } = await supabase
-      .from('match_history')
-      .select('user1_id, user2_id')
-      .gte('matched_at', thirtyDaysAgo.toISOString().split('T')[0]);
-
-    if (historyError) {
-      results.errors.push(`Failed to fetch history for ${domain}: ${historyError.message}`);
-      continue;
-    }
-
-    const historySet = new Set<string>();
-    for (const h of history ?? []) {
-      historySet.add([h.user1_id, h.user2_id].sort().join('_'));
-    }
-
-    // Rematch window: pairs older than 14 days are eligible again.
-    const fourteenDaysAgo = new Date();
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-
-    const { data: oldHistory } = await supabase
-      .from('match_history')
-      .select('user1_id, user2_id')
-      .lte('matched_at', fourteenDaysAgo.toISOString().split('T')[0]);
-
-    const allowedHistorySet = new Set<string>();
-    for (const h of oldHistory ?? []) {
-      allowedHistorySet.add([h.user1_id, h.user2_id].sort().join('_'));
-    }
-
-    // Shuffled so tie-breaking (equal scores, or nobody has any signal in
-    // common) still feels random rather than always favoring, say, whoever
-    // signed up first. Within that shuffle order, each unmatched user picks
-    // the highest-scoring still-available, not-recently-matched partner —
-    // greedy, not a global optimum (no Gale-Shapley stable-matching pass),
-    // but it means people with real overlap (personality/hobbies) reliably
-    // find each other instead of it being pure luck of the shuffle.
-    const shuffled = fisherYatesShuffle(domainProfiles);
-    const matched = new Set<string>();
-
-    for (let i = 0; i < shuffled.length; i++) {
-      const userA = shuffled[i];
-      if (matched.has(userA.id)) continue;
-
-      let foundMatch: Profile | null = null;
-      let bestScore = -1;
-      for (let j = i + 1; j < shuffled.length; j++) {
-        const userB = shuffled[j];
-        if (matched.has(userB.id)) continue;
-
-        const key = [userA.id, userB.id].sort().join('_');
-        if (!historySet.has(key) || allowedHistorySet.has(key)) {
-          const score = compatibilityScore(userA, userB);
-          if (score > bestScore) {
-            bestScore = score;
-            foundMatch = userB;
-          }
+      const key = [userA.id, userB.id].sort().join('_');
+      if (!historySet.has(key) || allowedHistorySet.has(key)) {
+        const score = compatibilityScore(userA, userB);
+        if (score > bestScore) {
+          bestScore = score;
+          foundMatch = userB;
         }
       }
+    }
 
-      if (foundMatch) {
-        matched.add(userA.id);
-        matched.add(foundMatch.id);
+    if (foundMatch) {
+      matched.add(userA.id);
+      matched.add(foundMatch.id);
 
-        const icebreaker = generateIcebreaker(userA, foundMatch);
-        const expiresAt = new Date();
-        expiresAt.setHours(24, 0, 0, 0);
+      const icebreaker = generateIcebreaker(userA, foundMatch);
+      const [user1_id, user2_id] = [userA.id, foundMatch.id].sort();
 
-        const [user1_id, user2_id] = [userA.id, foundMatch.id].sort();
+      newMatches.push({
+        user1_id,
+        user2_id,
+        status: 'active',
+        icebreaker,
+        expires_at: expiresAt.toISOString(),
+      });
+      newHistory.push({ user1_id, user2_id });
 
-        allNewMatches.push({
-          user1_id,
-          user2_id,
-          status: 'active',
-          icebreaker,
-          expires_at: expiresAt.toISOString(),
+      if (userA.fcm_token) {
+        notifications.push({
+          token: userA.fcm_token,
+          title: 'New Cosmic Match! 🚀',
+          body: "You've been paired with someone new. Chat before the connection expires!",
         });
-        allNewHistory.push({ user1_id, user2_id });
-
-        if (userA.fcm_token) {
-          notificationsToSend.push({
-            token: userA.fcm_token,
-            title: 'New Cosmic Match! 🚀',
-            body: "You've been paired with someone new. You have 24 hours to chat!",
-          });
-        }
-        if (foundMatch.fcm_token) {
-          notificationsToSend.push({
-            token: foundMatch.fcm_token,
-            title: 'New Cosmic Match! 🚀',
-            body: "You've been paired with someone new. You have 24 hours to chat!",
-          });
-        }
-
-        results.matched++;
-      } else {
-        results.oddManOut.push(userA.id);
       }
+      if (foundMatch.fcm_token) {
+        notifications.push({
+          token: foundMatch.fcm_token,
+          title: 'New Cosmic Match! 🚀',
+          body: "You've been paired with someone new. Chat before the connection expires!",
+        });
+      }
+
+      result.matched++;
+    } else {
+      result.oddManOut.push(userA.id);
     }
   }
 
-  if (allNewMatches.length > 0) {
-    const { error: matchInsertError } = await supabase.from('matches').insert(allNewMatches);
+  if (newMatches.length > 0) {
+    const { error: matchInsertError } = await supabase.from('matches').insert(newMatches);
     if (matchInsertError) {
-      results.errors.push(`Failed to insert matches: ${matchInsertError.message}`);
+      result.errors.push(`Failed to insert matches for ${domain}: ${matchInsertError.message}`);
     } else {
-      const { error: historyInsertError } = await supabase
-        .from('match_history')
-        .insert(allNewHistory);
+      const { error: historyInsertError } = await supabase.from('match_history').insert(newHistory);
       if (historyInsertError) {
-        results.errors.push(`Failed to insert history: ${historyInsertError.message}`);
+        result.errors.push(`Failed to insert history for ${domain}: ${historyInsertError.message}`);
       } else {
-        for (const n of notificationsToSend) {
+        for (const n of notifications) {
           await sendPushNotification(n.token, n.title, n.body);
         }
       }
     }
   }
 
-  return results;
+  return result;
+}
+
+// ---------- Top-level tick ----------
+
+async function runMatchmakingTick(supabase: SupabaseClient): Promise<MatchmakingResults> {
+  const { data: profiles, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('is_active', true);
+
+  if (profileError || !profiles) {
+    return {
+      campuses: [
+        {
+          domain: '*',
+          mode: 'skipped',
+          matched: 0,
+          oddManOut: [],
+          errors: [`Failed to fetch profiles: ${profileError?.message ?? 'Unknown error'}`],
+        },
+      ],
+    };
+  }
+
+  const { data: universities, error: uniError } = await supabase
+    .from('university_config')
+    .select('email_domain, timezone')
+    .eq('is_active', true);
+
+  if (uniError || !universities) {
+    return {
+      campuses: [
+        {
+          domain: '*',
+          mode: 'skipped',
+          matched: 0,
+          oddManOut: [],
+          errors: [`Failed to fetch active universities: ${uniError?.message ?? 'Unknown error'}`],
+        },
+      ],
+    };
+  }
+
+  const campuses: CampusResult[] = [];
+  for (const uni of universities as UniversityConfig[]) {
+    const domainProfiles = (profiles as Profile[]).filter((p) => p.email_domain === uni.email_domain);
+    const result = await runMatchmakingForCampus(supabase, uni, domainProfiles, {
+      allowReset: true,
+      allowTopup: false,
+    });
+    campuses.push(result);
+  }
+
+  return { campuses };
+}
+
+// Single-campus, event-triggered top-up. Called by the on-profile-
+// onboarding-complete trigger (migration 015) the instant someone
+// finishes signup — never touches any other campus, never resets.
+async function runTopupForDomain(supabase: SupabaseClient, domain: string): Promise<CampusResult> {
+  const { data: uni, error: uniError } = await supabase
+    .from('university_config')
+    .select('email_domain, timezone')
+    .eq('email_domain', domain)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (uniError) {
+    return { domain, mode: 'skipped', matched: 0, oddManOut: [], errors: [uniError.message] };
+  }
+  if (!uni) {
+    // Campus isn't active (or doesn't exist) — nothing to do.
+    return { domain, mode: 'skipped', matched: 0, oddManOut: [], errors: [] };
+  }
+
+  const { data: profiles, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('is_active', true)
+    .eq('email_domain', domain);
+
+  if (profileError) {
+    return { domain, mode: 'skipped', matched: 0, oddManOut: [], errors: [profileError.message] };
+  }
+
+  return runMatchmakingForCampus(supabase, uni as UniversityConfig, (profiles ?? []) as Profile[], {
+    allowReset: false,
+    allowTopup: true,
+  });
 }
 
 // ---------- HTTP entry ----------
@@ -357,27 +666,35 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // Two shapes of request:
+  //   {}                          → cron tick (reset-check across every active campus)
+  //   { mode: 'topup', domain }   → onboarding trigger (single-campus top-up)
+  let body: { mode?: string; domain?: string } = {};
   try {
-    // 1. Expire yesterday's active matches. Idempotent — pg_cron's
-    //    expire-matches-midnight job may already have run this SQL a few
-    //    seconds earlier and set every active row to expired; running it
-    //    again matches zero rows and is a no-op.
-    const { error: expireError } = await supabase.rpc('expire_active_matches');
-    if (expireError) {
-      console.error('expire_active_matches error:', expireError);
-      return Response.json({ error: 'Failed to expire matches' }, { status: 500 });
+    const text = await req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    // No/invalid body — treat as a plain cron tick.
+  }
+
+  try {
+    if (body.mode === 'topup' && body.domain) {
+      const result = await runTopupForDomain(supabase, body.domain);
+      return Response.json({
+        success: true,
+        results: { campuses: [result] },
+        message: 'Top-up matchmaking completed',
+      });
     }
 
-    // 2. Generate today's matches.
-    const results = await runMatchmaking(supabase);
-
+    const results = await runMatchmakingTick(supabase);
     return Response.json({
       success: true,
       results,
-      message: 'Daily match reset completed successfully',
+      message: 'Matchmaking tick completed',
     });
   } catch (err) {
-    console.error('cron job error:', err);
+    console.error('matchmaking tick error:', err);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 });
