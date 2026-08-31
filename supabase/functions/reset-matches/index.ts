@@ -549,10 +549,86 @@ async function runMatchmakingForCampus(
       }
 
       result.matched++;
-    } else {
-      result.oddManOut.push(userA.id);
     }
   }
+
+  // Fallback pass: on tiny campus pools everyone can end up cooldowned
+  // against everyone else, and the primary loop above matches zero
+  // people. A rematch with someone you talked to a few weeks ago is
+  // better than "no match today, come back tomorrow." Second pass runs
+  // only over the leftovers from pass 1 and ignores the history filter,
+  // but still respects blocked_pairs. Pairs are ranked by
+  // days-since-their-last-match (bigger = prefer), so the freshest
+  // possible rematch wins and same-partner-two-nights-in-a-row is the
+  // absolute last resort.
+  const leftovers = shuffled.filter((p) => !matched.has(p.id));
+  if (leftovers.length >= 2) {
+    const daysSinceLastByPair = new Map<string, number>();
+    for (const h of history ?? []) {
+      const key = [h.user1_id, h.user2_id].sort().join('_');
+      const days = Math.floor((Date.now() - new Date(h.matched_at).getTime()) / 86400000);
+      daysSinceLastByPair.set(
+        key,
+        Math.min(daysSinceLastByPair.get(key) ?? Number.POSITIVE_INFINITY, days),
+      );
+    }
+    // 999 sentinel = "no record in the last 30 days" — treat as very
+    // fresh so brand-new pairs beat any rematch.
+    const daysAgoFor = (key: string) => daysSinceLastByPair.get(key) ?? 999;
+
+    for (let i = 0; i < leftovers.length; i++) {
+      const userA = leftovers[i];
+      if (matched.has(userA.id)) continue;
+      let foundMatch: Profile | null = null;
+      let bestScore = -Infinity;
+      for (let j = i + 1; j < leftovers.length; j++) {
+        const userB = leftovers[j];
+        if (matched.has(userB.id)) continue;
+        const key = [userA.id, userB.id].sort().join('_');
+        if (blockedSet.has(key)) continue;
+        // Days-since dominates so we spread rematches across the pool
+        // as much as possible; compatibility is a tiebreaker.
+        const score = daysAgoFor(key) * 100 + compatibilityScore(userA, userB);
+        if (score > bestScore) {
+          bestScore = score;
+          foundMatch = userB;
+        }
+      }
+      if (foundMatch) {
+        matched.add(userA.id);
+        matched.add(foundMatch.id);
+        const icebreaker = generateIcebreaker(userA, foundMatch);
+        const [user1_id, user2_id] = [userA.id, foundMatch.id].sort();
+        newMatches.push({
+          user1_id,
+          user2_id,
+          status: 'active',
+          icebreaker,
+          expires_at: expiresAt.toISOString(),
+        });
+        newHistory.push({ user1_id, user2_id });
+        if (userA.fcm_token) {
+          notifications.push({
+            token: userA.fcm_token,
+            title: 'You matched again! 🌠',
+            body: "Small pool tonight — you're paired with a familiar face. Chat before it expires!",
+          });
+        }
+        if (foundMatch.fcm_token) {
+          notifications.push({
+            token: foundMatch.fcm_token,
+            title: 'You matched again! 🌠',
+            body: "Small pool tonight — you're paired with a familiar face. Chat before it expires!",
+          });
+        }
+        result.matched++;
+      }
+    }
+  }
+
+  // Anyone still unmatched after both passes is truly odd-man-out
+  // (either alone on the campus or blocked by everyone left).
+  result.oddManOut = shuffled.filter((p) => !matched.has(p.id)).map((p) => p.id);
 
   if (newMatches.length > 0) {
     const { error: matchInsertError } = await supabase.from('matches').insert(newMatches);

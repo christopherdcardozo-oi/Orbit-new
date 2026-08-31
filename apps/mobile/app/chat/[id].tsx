@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  Animated,
+  Easing,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -145,11 +147,20 @@ export default function ChatScreen() {
 
   const [timeLeftStr, setTimeLeftStr] = useState('')
   const [expired, setExpired] = useState(false)
-  // Static red urgency tint behind the chat — was an Animated.loop pulse
-  // before; kept the same "gets more intense as time runs out" signal but
-  // as a plain, non-animated opacity. The comet in CosmicBackground is the
-  // only motion on this screen now.
+  // secondsLeft is only tracked (and re-rendered every second) once
+  // we're in the last 10 minutes — up until then the coarse timeLeftStr
+  // ("3 hours", "42 minutes") is enough and updates every 30s.
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
+  // Static red urgency tint behind the chat.
   const [flashOpacity, setFlashOpacity] = useState(0)
+  // Disintegrate-and-leave animation state, driven by the match status
+  // realtime subscription flipping to 'expired' (or the countdown
+  // hitting 0 locally, whichever comes first).
+  const disintegrateAnim = useRef(new Animated.Value(0)).current // 0 → 1 fades bubbles out + up
+  const blackoutAnim = useRef(new Animated.Value(0)).current // 0 → 1 fades to black overlay
+  const [disintegrating, setDisintegrating] = useState(false)
+  // Banner pulse in the last 10 min — subtle scale + opacity.
+  const bannerPulse = useRef(new Animated.Value(1)).current
   const seenMessageIds = useRef(new Set<string>())
 
   // Menu (three-dot) + Report modal + Block confirmation.
@@ -327,23 +338,44 @@ export default function ChatScreen() {
   }, [messages.length])
 
   // ---------- Countdown + expiry ----------
+  //
+  // Two rates. Down to the last 10 min we tick every 30 seconds and
+  // show a coarse label ("3 hours", "42 minutes") in the warning
+  // banner. Once inside the last 10 min we switch to a 1-second tick
+  // and render a live m:ss countdown ("9:47"), and turn on the banner
+  // pulse for extra urgency. Refs are recomputed on every tick so the
+  // interval frequency actually changes when we cross the threshold.
 
   useEffect(() => {
     if (!match?.expires_at) return
+    let interval: ReturnType<typeof setInterval> | null = null
+    let inFinalWindow = false
 
-    const calculateTimeLeft = () => {
+    const tick = () => {
       const now = Date.now()
       const expiresAt = new Date(match.expires_at as string).getTime()
       const diffMs = expiresAt - now
 
       if (diffMs <= 0) {
         setExpired(true)
+        setSecondsLeft(0)
         setTimeLeftStr('expired')
-        return { diffHours: 0, diffMinutes: 0 }
+        setFlashOpacity(0.35)
+        return
       }
 
+      const totalSeconds = Math.floor(diffMs / 1000)
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
       const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+
+      // Inside the last 10 min: track live seconds so the banner can
+      // render m:ss. Outside: null, so the coarse label renders.
+      const nowInFinal = diffHours === 0 && diffMinutes < 10
+      if (nowInFinal) {
+        setSecondsLeft(totalSeconds)
+      } else {
+        setSecondsLeft(null)
+      }
 
       if (diffHours > 0) {
         setTimeLeftStr(`${diffHours} hour${diffHours === 1 ? '' : 's'}`)
@@ -353,24 +385,96 @@ export default function ChatScreen() {
         setTimeLeftStr('less than a minute')
       }
 
-      return { diffHours, diffMinutes }
+      // Same three urgency tiers as before for the background red tint.
+      if (diffHours === 0 && diffMinutes <= 10) {
+        setFlashOpacity(0.35)
+      } else if (diffHours === 0) {
+        setFlashOpacity(0.22)
+      } else {
+        setFlashOpacity(0.1)
+      }
+
+      // If crossing into the final window, swap the interval to 1s.
+      if (nowInFinal !== inFinalWindow) {
+        inFinalWindow = nowInFinal
+        if (interval) clearInterval(interval)
+        interval = setInterval(tick, nowInFinal ? 1000 : 30000)
+      }
     }
 
-    const { diffHours, diffMinutes } = calculateTimeLeft()
-
-    // Same three urgency tiers the old pulse used for its peak brightness —
-    // just held as a fixed value instead of animating toward it.
-    if (diffHours === 0 && diffMinutes <= 10) {
-      setFlashOpacity(0.35)
-    } else if (diffHours === 0) {
-      setFlashOpacity(0.22)
-    } else {
-      setFlashOpacity(0.1)
-    }
-
-    const interval = setInterval(calculateTimeLeft, 30000)
-    return () => clearInterval(interval)
+    tick()
+    interval = setInterval(tick, 30000)
+    return () => { if (interval) clearInterval(interval) }
   }, [match?.expires_at])
+
+  // Banner pulse — only runs during the last 10 min. Subtle scale +
+  // opacity loop, 800ms each direction.
+  useEffect(() => {
+    if (secondsLeft === null || secondsLeft <= 0) {
+      bannerPulse.setValue(1)
+      return
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bannerPulse, {
+          toValue: 1.06,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(bannerPulse, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]),
+    )
+    loop.start()
+    return () => loop.stop()
+  }, [secondsLeft, bannerPulse])
+
+  // ---------- Disintegrate-and-leave sequence ----------
+  //
+  // Fires when either:
+  //   (a) realtime UPDATE on matches flips status to 'expired' (the
+  //       cron did it at midnight for this campus), OR
+  //   (b) our own local countdown hit 0 first (in which case the
+  //       realtime event will arrive shortly and we don't need it).
+  //
+  // Sequence: bubbles fade + drift up, then a black overlay fades in
+  // with "They vanished into the cosmos." then we navigate home. The
+  // home screen's realtime subscription will show the new match
+  // automatically the instant the matchmaker creates one.
+  const runDisintegrate = useCallback(() => {
+    if (disintegrating) return
+    setDisintegrating(true)
+    Animated.sequence([
+      Animated.timing(disintegrateAnim, {
+        toValue: 1,
+        duration: 900,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.timing(blackoutAnim, {
+        toValue: 1,
+        duration: 500,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.delay(1200), // let them read "They vanished into the cosmos."
+    ]).start(() => {
+      router.replace('/(app)')
+    })
+  }, [disintegrating, disintegrateAnim, blackoutAnim, router])
+
+  // Trigger when status flips to expired (either via realtime or the
+  // local countdown reaching 0 and setting expired locally).
+  useEffect(() => {
+    if (expired || match?.status === 'expired') {
+      runDisintegrate()
+    }
+  }, [expired, match?.status, runDisintegrate])
 
   // router.back() silently no-ops when there's no history to go back to —
   // e.g. this chat was opened via a fresh refresh/deep link rather than a
@@ -637,21 +741,46 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Expiry warning */}
-      <View style={styles.warningBanner}>
+      {/* Expiry warning. In the last 10 min the banner switches to a
+          live m:ss countdown and starts pulsing (scale ramp driven by
+          bannerPulse). Everything else stays identical. */}
+      <Animated.View
+        style={[
+          styles.warningBanner,
+          secondsLeft !== null && secondsLeft > 0 && {
+            transform: [{ scale: bannerPulse }],
+            borderColor: 'rgba(239, 68, 68, 0.7)',
+            backgroundColor: 'rgba(239, 68, 68, 0.18)',
+          },
+        ]}
+      >
         <Ionicons name="time-outline" size={20} color="#fca5a5" />
         <Text style={styles.warningText}>
           {isActive
-            ? `Remember: You only have ${timeLeftStr} until this person is gone forever.`
+            ? secondsLeft !== null && secondsLeft > 0
+              ? `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')} until gone forever.`
+              : `Remember: You only have ${timeLeftStr} until this person is gone forever.`
             : 'This connection has expired. They vanished into the cosmos.'}
         </Text>
-      </View>
+      </Animated.View>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
+        {/* Messages column disintegrates first: bubbles fade + drift
+            upward as one block. Header, warning banner, and composer
+            stay put and get covered by the blackout overlay below. */}
+        <Animated.View
+          style={{
+            flex: 1,
+            opacity: disintegrateAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+            transform: [
+              { translateY: disintegrateAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -40] }) },
+            ],
+          }}
+        >
         <FlatList
           ref={listRef}
           data={messages}
@@ -689,6 +818,7 @@ export default function ChatScreen() {
             )
           }}
         />
+        </Animated.View>
 
         {/* Contact-reveal banner. Compact summary — full manage UI lives
             in the modal. Three cases:
@@ -1089,6 +1219,38 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Disintegrate blackout overlay — sits over everything, fades
+          in after the messages have drifted away. Absorbs any tap so
+          the user can't accidentally trigger anything mid-transition. */}
+      {disintegrating && (
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: '#000',
+              opacity: blackoutAnim,
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 999,
+            },
+          ]}
+        >
+          <Animated.Text
+            style={{
+              color: '#c084fc',
+              fontSize: 20,
+              fontWeight: '600',
+              textAlign: 'center',
+              paddingHorizontal: 32,
+              opacity: blackoutAnim,
+            }}
+          >
+            They vanished into the cosmos.
+          </Animated.Text>
+        </Animated.View>
+      )}
     </SafeAreaView>
   )
 }
