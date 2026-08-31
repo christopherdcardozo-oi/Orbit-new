@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -284,6 +284,15 @@ export default function ChatTabScreen() {
     return (
       <View style={styles.container}>
         <CosmicBackground />
+        {/* ScrollView so the matched card + any rateable-match cards
+            below it can scroll on shorter screens — otherwise the
+            ratings sit off-screen behind the tab bar and there's no
+            way to reach them. */}
+        <ScrollView
+          style={{ flex: 1, width: '100%' }}
+          contentContainerStyle={styles.matchedScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.matchedCard}>
           <View style={styles.matchedAvatarRing}>
             <MaterialCommunityIcons name={activeMatch.partnerAvatar as any} size={56} color="#c084fc" />
@@ -335,6 +344,7 @@ export default function ChatTabScreen() {
             </View>
           </View>
         ))}
+        </ScrollView>
       </View>
     );
   }
@@ -342,6 +352,14 @@ export default function ChatTabScreen() {
   return (
     <View style={styles.container}>
       <CosmicBackground />
+      {/* Same reason as the matched-card branch above — wrap in
+          ScrollView so up-to-2 rating cards under the text can be
+          reached on shorter screens instead of sitting off-screen. */}
+      <ScrollView
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={styles.unmatchedScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.radarContainer}>
         <Animated.View style={[styles.pulseRing, { transform: [{ scale }], opacity }]} />
         <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }], opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] }) }]} />
@@ -406,6 +424,7 @@ export default function ChatTabScreen() {
           </View>
         ))}
       </View>
+      </ScrollView>
     </View>
   );
 }
@@ -602,6 +621,24 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(192, 132, 252, 0.2)',
     width: '100%',
     alignItems: 'center',
+  },
+  // Scroll containers add generous bottom padding so the last card
+  // never sits behind the tab bar. justifyContent keeps the primary
+  // content vertically centered on tall screens where nothing scrolls.
+  matchedScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
+    paddingBottom: 120,
+  },
+  unmatchedScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
+    paddingBottom: 120,
   },
   cooldownBox: {
     flexDirection: 'row',
