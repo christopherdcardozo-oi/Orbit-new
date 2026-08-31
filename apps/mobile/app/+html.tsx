@@ -19,7 +19,14 @@ export default function Root({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        {/* interactive-widget=resizes-content tells iOS Safari / Chrome to
+            actually shrink the layout viewport when the on-screen keyboard
+            opens, instead of leaving the page at its pre-keyboard height —
+            which is what caused the blank white gap below the form. */}
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, shrink-to-fit=no, interactive-widget=resizes-content"
+        />
 
         {/* Disable body scrolling on web so ScrollView behaves like native. */}
         <ScrollViewStyleReset />
