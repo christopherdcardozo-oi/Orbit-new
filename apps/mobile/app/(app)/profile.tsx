@@ -51,6 +51,11 @@ export default function ProfileTabScreen() {
   const [personality, setPersonality] = useState<string[]>([]);
   const [hobbies, setHobbies] = useState<string[]>([]);
   const [activities, setActivities] = useState<string[]>([]);
+  // Inline error for the Edit Profile save — Alert.alert is unreliable
+  // on web (some RN-web versions no-op it), and even on native it's
+  // an interstitial modal that pulls focus away from the field they
+  // need to fix.
+  const [editError, setEditError] = useState<string>('');
 
   useEffect(() => {
     fetchProfile();
@@ -85,25 +90,35 @@ export default function ProfileTabScreen() {
 
   const toggleChip = (v: string, list: string[], setList: (l: string[]) => void) => {
     setList(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+    if (editError) setEditError('');
   };
 
   const handleSave = async () => {
-    // Same requirements as signup: all 4 personality answers, and at
-    // least 1 hobby. Enforce here too so people can't strip the matcher's
-    // main signals by editing their profile down to nothing.
+    setEditError('');
+    // Same requirements as signup: all 4 personality answers, at
+    // least 1 hobby, and major + year filled in. Enforce here too so
+    // people can't strip the matcher's main signals by editing.
+    if (!major.trim()) {
+      setEditError('Please enter your major.');
+      return;
+    }
+    if (!year.trim()) {
+      setEditError('Please pick your year in school.');
+      return;
+    }
     const missingPersonality = PERSONALITY_QUESTIONS.some((_, i) => !personality[i] || !personality[i].trim());
     if (missingPersonality) {
-      Alert.alert('Missing answers', 'Please answer all four personality questions.');
+      setEditError('Please answer all four personality questions.');
       return;
     }
     if (hobbies.length === 0) {
-      Alert.alert('Missing hobbies', 'Please pick at least one hobby.');
+      setEditError('Please pick at least one hobby.');
       return;
     }
 
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) { setSaving(false); return; }
 
     const { error } = await supabase
       .from('profiles')
@@ -120,7 +135,7 @@ export default function ProfileTabScreen() {
 
     setSaving(false);
     if (error) {
-      Alert.alert('Error', 'Failed to update profile');
+      setEditError('Failed to save. Please try again.');
     } else {
       setIsEditing(false);
       fetchProfile();
@@ -379,11 +394,17 @@ export default function ProfileTabScreen() {
               </View>
             </View>
 
+            {editError ? (
+              <View style={styles.editErrorBox}>
+                <Text style={styles.editErrorText}>{editError}</Text>
+              </View>
+            ) : null}
+
             <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Changes</Text>}
             </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setIsEditing(false)}>
+
+            <TouchableOpacity style={styles.cancelButton} onPress={() => { setEditError(''); setIsEditing(false); }}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -436,7 +457,7 @@ export default function ProfileTabScreen() {
               )}
             </View>
 
-            <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={() => setIsEditing(true)}>
+            <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={() => { setEditError(''); setIsEditing(true); }}>
               <Text style={styles.buttonText}>Edit Profile</Text>
             </TouchableOpacity>
           </View>
@@ -647,6 +668,22 @@ const styles = StyleSheet.create({
   viewValue: { color: '#fff', fontSize: 16, fontWeight: '500' },
   viewValueHigh: { color: '#d8b4fe', fontSize: 16, fontWeight: '600', marginTop: 4 },
   viewValueMuted: { color: '#6b7280', fontSize: 13, fontStyle: 'italic' },
+  editErrorBox: {
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  editErrorText: {
+    color: '#fca5a5',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   chip: {
     paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999,

@@ -464,6 +464,15 @@ export default function SignupScreen() {
                 </View>
               </View>
 
+              {/* Also render the error just above Continue — the top
+                  banner is way off-screen after scrolling through the
+                  personality + hobby + activity chips. */}
+              {errorMessage ? (
+                <View style={[styles.errorBox, { marginTop: 8 }]}>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
               <TouchableOpacity style={styles.button} onPress={handleSavePersonality} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
               </TouchableOpacity>
