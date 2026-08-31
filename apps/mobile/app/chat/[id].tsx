@@ -278,6 +278,18 @@ export default function ChatScreen() {
     return () => clearInterval(interval)
   }, [match?.expires_at])
 
+  // router.back() silently no-ops when there's no history to go back to —
+  // e.g. this chat was opened via a fresh refresh/deep link rather than a
+  // Start Chatting tap. Fall back to the match list so the button always
+  // does something.
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back()
+    } else {
+      router.replace('/(app)')
+    }
+  }, [router])
+
   const isActive = match?.status === 'active' && !expired
 
   const handleSend = useCallback(async () => {
@@ -325,7 +337,7 @@ export default function ChatScreen() {
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <CosmicBackground />
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Not found</Text>

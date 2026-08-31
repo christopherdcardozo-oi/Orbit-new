@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,7 @@ const AVATARS = ['alien', 'alien-outline', 'rocket-launch', 'ufo', 'ufo-outline'
 const QUESTIONS = PERSONALITY_QUESTIONS;
 
 export default function ProfileTabScreen() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -80,7 +82,17 @@ export default function ProfileTabScreen() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    // Previously relied entirely on the root layout's onAuthStateChange
+    // redirect to kick in after signOut() resolved — worked most of the
+    // time, but any hiccup there (a stale listener, a swallowed error)
+    // left the user stuck on this screen with no feedback at all.
+    // Navigate explicitly and surface errors instead of failing silently.
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      Alert.alert('Error signing out', error.message);
+      return;
+    }
+    router.replace('/');
   };
 
   const handleDeleteAccount = () => {
