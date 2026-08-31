@@ -453,6 +453,24 @@ async function runMatchmakingForCampus(
     allowedHistorySet.add([h.user1_id, h.user2_id].sort().join('_'));
   }
 
+  // Blocked pairs — if either direction of (a,b) is in the table, they
+  // never match. Keyed the same way as historySet so the check inside
+  // the greedy loop is one Set.has() call.
+  const { data: blocks, error: blocksError } = await supabase
+    .from('blocked_pairs')
+    .select('blocker_id, blocked_id')
+    .or(`blocker_id.in.(${domainProfileIds.join(',')}),blocked_id.in.(${domainProfileIds.join(',')})`);
+
+  if (blocksError) {
+    result.errors.push(`Failed to fetch blocks for ${domain}: ${blocksError.message}`);
+    // Not fatal — a block-lookup failure shouldn't block all matching.
+  }
+
+  const blockedSet = new Set<string>();
+  for (const b of blocks ?? []) {
+    blockedSet.add([b.blocker_id, b.blocked_id].sort().join('_'));
+  }
+
   // Shuffled so tie-breaking (equal scores, or nobody has any signal in
   // common) still feels random. Within that shuffle order, each unmatched
   // user picks the highest-scoring still-available, not-recently-matched
@@ -489,6 +507,7 @@ async function runMatchmakingForCampus(
       if (matched.has(userB.id)) continue;
 
       const key = [userA.id, userB.id].sort().join('_');
+      if (blockedSet.has(key)) continue;
       if (!historySet.has(key) || allowedHistorySet.has(key)) {
         const score = compatibilityScore(userA, userB);
         if (score > bestScore) {

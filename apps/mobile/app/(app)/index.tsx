@@ -4,6 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import CosmicBackground from '../../components/CosmicBackground';
+import Skeleton from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 
 // Matches reset at local midnight for the user's campus (see
@@ -61,6 +62,12 @@ export default function ChatTabScreen() {
   const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
   const [loadingMatch, setLoadingMatch] = useState(true);
 
+  // Most recent expired match the user hasn't rated yet — surfaces a
+  // "how'd it go?" prompt on the "no active match" screen so we can
+  // collect quality feedback exactly once per match. Cleared as soon as
+  // they tap thumbs up/down or dismiss.
+  const [rateableMatch, setRateableMatch] = useState<{ id: string; partnerAlias: string } | null>(null);
+
   const fetchActiveMatch = useCallback(async (uid: string) => {
     const { data: match } = await supabase
       .from('matches')
@@ -91,6 +98,51 @@ export default function ChatTabScreen() {
     setLoadingMatch(false);
   }, []);
 
+  // Look for a match that expired in the last 48h and hasn't been rated
+  // by this user yet — that's the one we prompt them to rate. Cap at
+  // 48h so we don't nag them about a match from a week ago.
+  const fetchRateableMatch = useCallback(async (uid: string) => {
+    const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+    const { data: expired } = await supabase
+      .from('matches')
+      .select('id, user1_id, user2_id, expires_at')
+      .or(`user1_id.eq.${uid},user2_id.eq.${uid}`)
+      .neq('status', 'active')
+      .gte('expires_at', twoDaysAgo)
+      .order('expires_at', { ascending: false })
+      .limit(5);
+    if (!expired || expired.length === 0) { setRateableMatch(null); return; }
+
+    // Which of these have I already rated?
+    const ids = expired.map((m) => m.id);
+    const { data: rated } = await supabase
+      .from('match_ratings')
+      .select('match_id')
+      .in('match_id', ids);
+    const ratedIds = new Set((rated ?? []).map((r) => r.match_id));
+
+    const target = expired.find((m) => !ratedIds.has(m.id));
+    if (!target) { setRateableMatch(null); return; }
+
+    const partnerId = target.user1_id === uid ? target.user2_id : target.user1_id;
+    const { data: partner } = await supabase
+      .from('profiles')
+      .select('display_alias')
+      .eq('id', partnerId)
+      .maybeSingle();
+    setRateableMatch({ id: target.id, partnerAlias: partner?.display_alias ?? 'Mystery Connection' });
+  }, []);
+
+  const submitRating = async (rating: 'up' | 'down') => {
+    if (!userId || !rateableMatch) return;
+    await supabase.from('match_ratings').insert({
+      match_id: rateableMatch.id,
+      rater_id: userId,
+      rating,
+    });
+    setRateableMatch(null);
+  };
+
   useEffect(() => {
     const fetchProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -115,9 +167,10 @@ export default function ChatTabScreen() {
       }
 
       await fetchActiveMatch(user.id);
+      await fetchRateableMatch(user.id);
     };
     fetchProfile();
-  }, [fetchActiveMatch]);
+  }, [fetchActiveMatch, fetchRateableMatch]);
 
   // Live updates: if a match appears (top-up matched you while this
   // screen is open) or your active match gets expired, reflect it
@@ -133,6 +186,7 @@ export default function ChatTabScreen() {
         { event: '*', schema: 'public', table: 'matches' },
         () => {
           fetchActiveMatch(userId);
+          fetchRateableMatch(userId);
         }
       )
       .subscribe();
@@ -140,7 +194,7 @@ export default function ChatTabScreen() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, fetchActiveMatch]);
+  }, [userId, fetchActiveMatch, fetchRateableMatch]);
 
   useEffect(() => {
     setSecondsLeft(getSecondsUntilMidnight(timezone));
@@ -204,10 +258,19 @@ export default function ChatTabScreen() {
   });
 
   if (loadingMatch) {
+    // Skeleton shape matches both possible branches (matched card OR
+    // "scanning the cosmos" waiting state) closely enough that neither
+    // one jumps when it takes over — a circular avatar/logo placeholder,
+    // an eyebrow label, a title, and a subtitle line.
     return (
       <View style={styles.container}>
         <CosmicBackground />
-        <ActivityIndicator size="large" color="#a855f7" />
+        <View style={styles.matchedCard}>
+          <Skeleton width={112} height={112} radius={56} style={{ marginBottom: 16 }} />
+          <Skeleton width={120} height={12} radius={4} style={{ marginBottom: 12 }} />
+          <Skeleton width={200} height={28} radius={6} style={{ marginBottom: 20 }} />
+          <Skeleton style={{ width: '100%', height: 80, borderRadius: 16 }} />
+        </View>
       </View>
     );
   }
@@ -272,10 +335,46 @@ export default function ChatTabScreen() {
         <Text style={styles.subtitle}>
           The algorithm pairs users every night at midnight. Make sure your profile is ready to enter orbit.
         </Text>
+        {/* Cooldown notice: last 2 hours before reset we don't top-up
+            new signups, so tell them why. Wittier than "please wait". */}
+        {secondsLeft < 2 * 3600 && (
+          <View style={styles.cooldownBox}>
+            <Ionicons name="moon" size={18} color="#c084fc" style={{ marginRight: 8 }} />
+            <Text style={styles.cooldownText}>
+              The cosmos is winding down — no new pairs happen in the last 2 hours before reset.
+              You're officially in the queue for the midnight batch.
+            </Text>
+          </View>
+        )}
         <View style={styles.countdownBox}>
           <Text style={styles.countdownLabel}>Next reset in</Text>
           <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
         </View>
+
+        {/* Post-match rating prompt — appears once, dismissed on tap. */}
+        {rateableMatch && (
+          <View style={styles.ratingBox}>
+            <Text style={styles.ratingQuestion}>
+              How was your connection with {rateableMatch.partnerAlias}?
+            </Text>
+            <View style={styles.ratingButtons}>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating('up')}>
+                <Ionicons name="thumbs-up" size={22} color="#86efac" />
+                <Text style={[styles.ratingBtnText, { color: '#86efac' }]}>Good</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating('down')}>
+                <Ionicons name="thumbs-down" size={22} color="#fca5a5" />
+                <Text style={[styles.ratingBtnText, { color: '#fca5a5' }]}>Meh</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.ratingBtn, { flex: 0.6 }]}
+                onPress={() => setRateableMatch(null)}
+              >
+                <Text style={[styles.ratingBtnText, { color: '#6b7280' }]}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -474,4 +573,50 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
+  cooldownBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(168, 85, 247, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.25)',
+  },
+  cooldownText: {
+    flex: 1,
+    color: '#e5e7eb',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  ratingBox: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: 'rgba(17, 24, 39, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderRadius: 16,
+    width: '100%',
+  },
+  ratingQuestion: {
+    color: '#e5e7eb',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  ratingButtons: { flexDirection: 'row', gap: 8 },
+  ratingBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  ratingBtnText: { fontSize: 14, fontWeight: '600' },
 });

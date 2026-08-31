@@ -9,11 +9,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
+import Skeleton from '../../components/Skeleton'
 import { supabase } from '../../lib/supabase'
 
 type Message = {
@@ -24,6 +27,29 @@ type Message = {
   created_at: string
   read_at: string | null
 }
+
+type ContactReveal = {
+  user_id: string
+  handle_type: 'instagram' | 'snapchat' | 'phone' | 'email' | 'other'
+  handle_value: string
+}
+
+const REPORT_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'harassment', label: 'Harassment or threats' },
+  { value: 'sexual-content', label: 'Sexual or explicit content' },
+  { value: 'spam', label: 'Spam or advertising' },
+  { value: 'impersonation', label: 'Impersonation / fake identity' },
+  { value: 'safety', label: 'Safety concern / self-harm' },
+  { value: 'other', label: 'Other' },
+]
+
+const HANDLE_TYPES: { value: ContactReveal['handle_type']; label: string; placeholder: string }[] = [
+  { value: 'instagram', label: 'Instagram', placeholder: '@yourhandle' },
+  { value: 'snapchat', label: 'Snapchat', placeholder: '@yoursnap' },
+  { value: 'phone', label: 'Phone', placeholder: '+1 555 555 5555' },
+  { value: 'email', label: 'Email', placeholder: 'you@example.com' },
+  { value: 'other', label: 'Other', placeholder: 'How to reach you' },
+]
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -59,6 +85,25 @@ export default function ChatScreen() {
   // only motion on this screen now.
   const [flashOpacity, setFlashOpacity] = useState(0)
   const seenMessageIds = useRef(new Set<string>())
+
+  // Menu (three-dot) + Report modal + Block confirmation.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportCategory, setReportCategory] = useState(REPORT_CATEGORIES[0].value)
+  const [reportDetails, setReportDetails] = useState('')
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportStatus, setReportStatus] = useState<null | { kind: 'ok' | 'err'; text: string }>(null)
+
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false)
+  const [blockBusy, setBlockBusy] = useState(false)
+
+  // Contact reveal — mine + partner's.
+  const [myReveal, setMyReveal] = useState<ContactReveal | null>(null)
+  const [partnerReveal, setPartnerReveal] = useState<ContactReveal | null>(null)
+  const [revealModalOpen, setRevealModalOpen] = useState(false)
+  const [revealType, setRevealType] = useState<ContactReveal['handle_type']>('instagram')
+  const [revealValue, setRevealValue] = useState('')
+  const [revealBusy, setRevealBusy] = useState(false)
 
   // ---------- Initial load ----------
 
@@ -262,6 +307,97 @@ export default function ChatScreen() {
 
   const isActive = match?.status === 'active' && !expired
 
+  // ---------- Contact reveal: fetch existing rows on load, and keep
+  // in sync via realtime so the partner's reveal appears the moment
+  // they submit theirs. RLS enforces that you only see the partner's
+  // row once you've also submitted your own — this fetch just returns
+  // an empty array before then, no error.
+  useEffect(() => {
+    if (!id || !userId) return
+    const load = async () => {
+      const { data } = await supabase
+        .from('contact_reveals')
+        .select('user_id, handle_type, handle_value')
+        .eq('match_id', id)
+      if (data) {
+        for (const r of data as ContactReveal[]) {
+          if (r.user_id === userId) setMyReveal(r)
+          else setPartnerReveal(r)
+        }
+      }
+    }
+    load()
+
+    const channel = supabase
+      .channel(`reveals-${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'contact_reveals', filter: `match_id=eq.${id}` },
+        () => { load() }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [id, userId])
+
+  const submitReveal = async () => {
+    if (!id || !userId) return
+    const value = revealValue.trim()
+    if (!value) return
+    setRevealBusy(true)
+    // Upsert on (match_id, user_id) so re-submitting overwrites your
+    // previous choice cleanly.
+    const { error } = await supabase
+      .from('contact_reveals')
+      .upsert(
+        { match_id: id, user_id: userId, handle_type: revealType, handle_value: value },
+        { onConflict: 'match_id,user_id' }
+      )
+    setRevealBusy(false)
+    if (!error) {
+      setMyReveal({ user_id: userId, handle_type: revealType, handle_value: value })
+      setRevealModalOpen(false)
+    }
+  }
+
+  const submitReport = async () => {
+    if (!id || !userId || !match) return
+    setReportBusy(true)
+    setReportStatus(null)
+    // reason = category (short slug); details = free text (optional).
+    const { error } = await supabase.from('reports').insert({
+      match_id: id,
+      reporter_id: userId,
+      reported_user_id: match.partnerId,
+      reason: reportCategory,
+      details: reportDetails.trim() || null,
+    })
+    setReportBusy(false)
+    if (error) {
+      const msg = error.code === '23505'
+        ? "You've already reported this person for this match."
+        : error.message
+      setReportStatus({ kind: 'err', text: msg })
+      return
+    }
+    setReportStatus({ kind: 'ok', text: 'Thanks — the report has been sent to our team.' })
+    setReportDetails('')
+  }
+
+  const confirmBlock = async () => {
+    if (!userId || !match) return
+    setBlockBusy(true)
+    await supabase.from('blocked_pairs').insert({
+      blocker_id: userId,
+      blocked_id: match.partnerId,
+    })
+    setBlockBusy(false)
+    setBlockConfirmOpen(false)
+    setMenuOpen(false)
+    // Blocking mid-match: leave the current chat gracefully. The
+    // matchmaker won't pair us again after this.
+    handleBack()
+  }
+
   const handleSend = useCallback(async () => {
     const content = inputText.trim()
     if (!content || !userId || !id || sending || !isActive) return
@@ -292,11 +428,36 @@ export default function ChatScreen() {
   // ---------- Render ----------
 
   if (loading) {
+    // Skeleton mirrors the real layout shape so nothing jumps when the
+    // data arrives — header, warning banner, two message-bubble
+    // placeholders (one left / one right), and the disabled composer.
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <CosmicBackground />
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color="#a855f7" />
+        <View style={styles.header}>
+          <View style={styles.backButton}>
+            <Ionicons name="chevron-back" size={28} color="#374151" />
+          </View>
+          <Skeleton width={140} height={20} radius={6} />
+          <View style={{ width: 28 }} />
+        </View>
+        <View style={styles.warningBanner}>
+          <Skeleton style={{ width: '90%', height: 16, borderRadius: 6 }} />
+        </View>
+        <View style={{ padding: 16, flex: 1 }}>
+          <View style={[styles.bubbleRow, styles.bubbleRowTheirs]}>
+            <Skeleton width={180} height={40} radius={18} />
+          </View>
+          <View style={[styles.bubbleRow, styles.bubbleRowMine]}>
+            <Skeleton width={140} height={40} radius={18} />
+          </View>
+          <View style={[styles.bubbleRow, styles.bubbleRowTheirs]}>
+            <Skeleton width={220} height={40} radius={18} />
+          </View>
+        </View>
+        <View style={styles.composer}>
+          <View style={[styles.composerInput, { opacity: 0.5 }]} />
+          <View style={[styles.sendButton, { opacity: 0.4 }]} />
         </View>
       </SafeAreaView>
     )
@@ -333,14 +494,16 @@ export default function ChatScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <MaterialCommunityIcons name={match.partnerAvatar as any} size={20} color="#c084fc" />
           <Text style={styles.headerTitle} numberOfLines={1}>{match.partnerAlias}</Text>
         </View>
-        <View style={{ width: 28 }} />
+        <TouchableOpacity style={styles.backButton} onPress={() => setMenuOpen(true)}>
+          <Ionicons name="ellipsis-vertical" size={22} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Expiry warning */}
@@ -396,6 +559,48 @@ export default function ChatScreen() {
           }}
         />
 
+        {/* Contact-reveal banner — three states:
+              (1) neither has opted in → "Share your contact?" prompt
+              (2) I opted in, waiting for partner → holding message
+              (3) both opted in → show the partner's handle */}
+        {isActive && (
+          <View style={styles.revealBanner}>
+            {myReveal && partnerReveal ? (
+              <>
+                <Ionicons name="checkmark-circle" size={18} color="#86efac" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={styles.revealBannerLabel}>
+                    {match.partnerAlias}'s {partnerReveal.handle_type}:
+                  </Text>
+                  <Text style={styles.revealBannerValue} selectable>
+                    {partnerReveal.handle_value}
+                  </Text>
+                </View>
+              </>
+            ) : myReveal ? (
+              <>
+                <Ionicons name="time-outline" size={18} color="#c084fc" />
+                <Text style={styles.revealBannerText}>
+                  Shared. Waiting for {match.partnerAlias} to share theirs.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="share-social-outline" size={18} color="#c084fc" />
+                <Text style={styles.revealBannerText}>
+                  Want to keep chatting past midnight?
+                </Text>
+                <TouchableOpacity
+                  style={styles.revealBannerBtn}
+                  onPress={() => { setRevealValue(''); setRevealType('instagram'); setRevealModalOpen(true) }}
+                >
+                  <Text style={styles.revealBannerBtnText}>Share contact</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         {/* Composer */}
         <View style={styles.composer}>
           <TextInput
@@ -421,6 +626,152 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Three-dot menu */}
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
+          <View style={styles.menuSheet}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { setMenuOpen(false); setReportOpen(true); setReportStatus(null) }}
+            >
+              <Ionicons name="flag-outline" size={20} color="#fca5a5" />
+              <Text style={[styles.menuItemText, { color: '#fca5a5' }]}>Report {match.partnerAlias}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { setMenuOpen(false); setBlockConfirmOpen(true) }}
+            >
+              <Ionicons name="ban-outline" size={20} color="#fca5a5" />
+              <Text style={[styles.menuItemText, { color: '#fca5a5' }]}>Block — never match again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuItem, { justifyContent: 'center' }]} onPress={() => setMenuOpen(false)}>
+              <Text style={[styles.menuItemText, { color: '#9ca3af' }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Report modal */}
+      <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => setReportOpen(false)}>
+        <View style={styles.menuBackdrop}>
+          <View style={[styles.menuSheet, { padding: 20 }]}>
+            <Text style={styles.sheetTitle}>Report {match.partnerAlias}</Text>
+            <Text style={styles.sheetSubtitle}>We'll review this — thank you for keeping Orbit safe.</Text>
+            {REPORT_CATEGORIES.map((c) => (
+              <TouchableOpacity
+                key={c.value}
+                style={[styles.optionRow, reportCategory === c.value && styles.optionRowActive]}
+                onPress={() => setReportCategory(c.value)}
+              >
+                <Ionicons
+                  name={reportCategory === c.value ? 'radio-button-on' : 'radio-button-off'}
+                  size={18}
+                  color={reportCategory === c.value ? '#c084fc' : '#6b7280'}
+                />
+                <Text style={styles.optionRowText}>{c.label}</Text>
+              </TouchableOpacity>
+            ))}
+            <TextInput
+              style={styles.reportInput}
+              placeholder="Any details? (optional)"
+              placeholderTextColor="#6b7280"
+              value={reportDetails}
+              onChangeText={setReportDetails}
+              multiline
+              maxLength={1000}
+            />
+            {reportStatus && (
+              <Text style={{
+                color: reportStatus.kind === 'ok' ? '#86efac' : '#fca5a5',
+                fontSize: 13, marginTop: 8, textAlign: 'center',
+              }}>{reportStatus.text}</Text>
+            )}
+            <View style={styles.sheetActions}>
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setReportOpen(false)}>
+                <Text style={styles.sheetCancelText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetPrimaryBtn, reportBusy && { opacity: 0.5 }]}
+                onPress={submitReport}
+                disabled={reportBusy || reportStatus?.kind === 'ok'}
+              >
+                {reportBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Send Report</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Block confirmation */}
+      <Modal visible={blockConfirmOpen} transparent animationType="fade" onRequestClose={() => setBlockConfirmOpen(false)}>
+        <View style={styles.menuBackdrop}>
+          <View style={[styles.menuSheet, { padding: 20 }]}>
+            <Text style={styles.sheetTitle}>Block {match.partnerAlias}?</Text>
+            <Text style={styles.sheetSubtitle}>
+              You'll leave this chat, and Orbit will never match the two of you again.
+            </Text>
+            <View style={styles.sheetActions}>
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setBlockConfirmOpen(false)}>
+                <Text style={styles.sheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetPrimaryBtn, { backgroundColor: '#dc2626' }, blockBusy && { opacity: 0.5 }]}
+                onPress={confirmBlock}
+                disabled={blockBusy}
+              >
+                {blockBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Block</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Contact-reveal modal */}
+      <Modal visible={revealModalOpen} transparent animationType="slide" onRequestClose={() => setRevealModalOpen(false)}>
+        <View style={styles.menuBackdrop}>
+          <View style={[styles.menuSheet, { padding: 20 }]}>
+            <Text style={styles.sheetTitle}>Share your contact</Text>
+            <Text style={styles.sheetSubtitle}>
+              Only shown to {match.partnerAlias} once they share theirs too. You can update or take back the share any time.
+            </Text>
+            <View style={styles.handleTypeRow}>
+              {HANDLE_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[styles.handleTypeChip, revealType === t.value && styles.handleTypeChipActive]}
+                  onPress={() => setRevealType(t.value)}
+                >
+                  <Text style={[styles.handleTypeText, revealType === t.value && { color: '#fff' }]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.reportInput}
+              placeholder={HANDLE_TYPES.find(t => t.value === revealType)?.placeholder}
+              placeholderTextColor="#6b7280"
+              value={revealValue}
+              onChangeText={setRevealValue}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType={revealType === 'phone' ? 'phone-pad' : revealType === 'email' ? 'email-address' : 'default'}
+              maxLength={200}
+            />
+            <View style={styles.sheetActions}>
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setRevealModalOpen(false)}>
+                <Text style={styles.sheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetPrimaryBtn, (revealBusy || !revealValue.trim()) && { opacity: 0.5 }]}
+                onPress={submitReveal}
+                disabled={revealBusy || !revealValue.trim()}
+              >
+                {revealBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Share</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -617,4 +968,111 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     opacity: 0.4,
   },
+
+  // Reveal banner (above composer)
+  revealBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(168, 85, 247, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.25)',
+    gap: 6,
+  },
+  revealBannerText: { flex: 1, color: '#e5e7eb', fontSize: 13 },
+  revealBannerLabel: { color: '#9ca3af', fontSize: 12 },
+  revealBannerValue: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  revealBannerBtn: {
+    backgroundColor: '#9333ea',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  revealBannerBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // Menu / report / block / reveal sheets
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    backgroundColor: '#0f172a',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 8,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#1f2937',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  menuItemText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+
+  sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 4, textAlign: 'center' },
+  sheetSubtitle: { color: '#9ca3af', fontSize: 13, textAlign: 'center', marginBottom: 16, lineHeight: 18 },
+
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  optionRowActive: { backgroundColor: 'rgba(168, 85, 247, 0.08)' },
+  optionRowText: { color: '#e5e7eb', fontSize: 14 },
+
+  reportInput: {
+    marginTop: 12,
+    backgroundColor: 'rgba(17, 24, 39, 0.8)',
+    borderWidth: 1,
+    borderColor: '#374151',
+    borderRadius: 12,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    minHeight: 80,
+    maxHeight: 160,
+    textAlignVertical: 'top',
+  },
+
+  sheetActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  sheetCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+    alignItems: 'center',
+  },
+  sheetCancelText: { color: '#e5e7eb', fontWeight: '600' },
+  sheetPrimaryBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#9333ea',
+    alignItems: 'center',
+  },
+  sheetPrimaryText: { color: '#fff', fontWeight: '700' },
+
+  handleTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  handleTypeChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  handleTypeChipActive: { backgroundColor: '#9333ea', borderColor: '#9333ea' },
+  handleTypeText: { color: '#9ca3af', fontSize: 13, fontWeight: '600' },
 })

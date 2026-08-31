@@ -5,9 +5,23 @@ import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import CosmicBackground from '../../components/CosmicBackground';
+import Skeleton from '../../components/Skeleton';
 import { PERSONALITY_QUESTIONS } from '../../lib/personality';
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
+
+// Must stay in sync with the CATEGORIES set in
+// supabase/functions/send-feedback/index.ts — the edge function rejects
+// any value not in that set.
+const FEEDBACK_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'bug', label: 'Bug — something is broken' },
+  { value: 'feature-request', label: 'Feature request' },
+  { value: 'ui-ux', label: 'UI / UX feedback' },
+  { value: 'matching-quality', label: 'Matching quality' },
+  { value: 'safety-abuse-report', label: 'Safety / abuse report' },
+  { value: 'account-help', label: 'Account help' },
+  { value: 'other', label: 'Other' },
+];
 const AVATARS = ['alien', 'alien-outline', 'rocket-launch', 'ufo', 'ufo-outline', 'planet', 'moon-waning-crescent', 'meteor', 'star-shooting', 'earth', 'satellite-variant'];
 
 // Sourced from lib/personality.ts so signup and this screen never drift.
@@ -20,6 +34,14 @@ export default function ProfileTabScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+
+  // Feedback modal state — kept next to showSettings since it's the same
+  // family of secondary flows.
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackCategory, setFeedbackCategory] = useState<string>('bug');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<null | { kind: 'ok' | 'err'; text: string }>(null);
 
   // Form State
   const [avatar, setAvatar] = useState('planet');
@@ -86,6 +108,63 @@ export default function ProfileTabScreen() {
     Linking.openURL(TIP_URL);
   };
 
+  const handleInviteFriend = async () => {
+    // Pre-fills the signup URL with the user's campus so their friends
+    // land on the right university picker pre-selected. If the campus
+    // isn't loaded yet, plain link still works.
+    const base = 'https://orbit.orghubs.com';
+    const campus = profile?.email_domain;
+    const url = campus ? `${base}/signup?campus=${encodeURIComponent(campus)}` : `${base}/signup`;
+    const text = `Try Orbit — anonymous campus-only match once a day, reset at midnight. ${url}`;
+    if (Platform.OS === 'web' && (navigator as any).share) {
+      try { await (navigator as any).share({ title: 'Orbit', text, url }); return; } catch { /* user cancelled */ }
+    }
+    // Fallback: copy to clipboard (web) or open a share sheet via
+    // Linking on native (mailto: works cross-platform without extra deps).
+    if (Platform.OS === 'web' && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        Alert.alert('Link copied', 'Share it with a friend from your campus.');
+        return;
+      } catch { /* fallthrough */ }
+    }
+    Linking.openURL(`mailto:?subject=Try Orbit&body=${encodeURIComponent(text)}`);
+  };
+
+  const openFeedback = () => {
+    // Reset any leftover state from a previous open so nothing carries
+    // over (a stale "sent" banner, a half-typed message from a canceled
+    // report, etc.).
+    setFeedbackCategory('bug');
+    setFeedbackMessage('');
+    setFeedbackStatus(null);
+    setShowFeedback(true);
+  };
+
+  const submitFeedback = async () => {
+    const trimmed = feedbackMessage.trim();
+    if (!trimmed) {
+      setFeedbackStatus({ kind: 'err', text: 'Please write a message before sending.' });
+      return;
+    }
+    setFeedbackSending(true);
+    setFeedbackStatus(null);
+    // functions.invoke handles the JWT + URL + CORS for us — the edge
+    // function uses the same JWT to look up the caller's profile, so
+    // we don't need to send any identity from the client.
+    const { data, error } = await supabase.functions.invoke('send-feedback', {
+      body: { category: feedbackCategory, message: trimmed },
+    });
+    setFeedbackSending(false);
+    if (error || (data && (data as any).error)) {
+      const msg = (data && (data as any).error) || error?.message || 'Failed to send.';
+      setFeedbackStatus({ kind: 'err', text: msg });
+      return;
+    }
+    setFeedbackMessage('');
+    setFeedbackStatus({ kind: 'ok', text: 'Thanks! Your feedback was sent.' });
+  };
+
   const handleSignOut = async () => {
     // Close the Settings sheet immediately, synchronously, regardless of
     // what signOut() below does — this was the actual bug: signOut()
@@ -144,9 +223,27 @@ export default function ProfileTabScreen() {
   };
 
   if (loading) {
+    // Skeleton mirrors the header (avatar + alias + subtitle) and the
+    // first info card (Major/Year rows + personality label + a few
+    // answer rows) so the layout doesn't jump when the profile arrives.
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#a855f7" />
+      <View style={styles.container}>
+        <CosmicBackground />
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 60, paddingHorizontal: 16 }}>
+          <View style={styles.header}>
+            <Skeleton width={112} height={112} radius={56} style={{ marginBottom: 12 }} />
+            <Skeleton width={180} height={26} radius={6} style={{ marginBottom: 8 }} />
+            <Skeleton width={100} height={14} radius={4} />
+          </View>
+          <View style={styles.card}>
+            <Skeleton style={{ width: '100%', height: 20, borderRadius: 6, marginBottom: 16 }} />
+            <Skeleton style={{ width: '100%', height: 20, borderRadius: 6, marginBottom: 24 }} />
+            <Skeleton width={120} height={16} radius={4} style={{ marginBottom: 16 }} />
+            <Skeleton style={{ width: '100%', height: 40, borderRadius: 6, marginBottom: 12 }} />
+            <Skeleton style={{ width: '100%', height: 40, borderRadius: 6, marginBottom: 12 }} />
+            <Skeleton style={{ width: '100%', height: 40, borderRadius: 6 }} />
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -261,6 +358,11 @@ export default function ProfileTabScreen() {
           </View>
         )}
 
+        <TouchableOpacity style={styles.inviteButton} onPress={handleInviteFriend}>
+          <Ionicons name="share-social" size={18} color="#c084fc" />
+          <Text style={styles.inviteButtonText}>Invite a Friend from Your Campus</Text>
+        </TouchableOpacity>
+
         {/* Opens Stripe's own donate page in the browser — no payment
             details are ever seen or handled by the app itself. */}
         <TouchableOpacity style={styles.tipButton} onPress={handleTipDev}>
@@ -278,6 +380,14 @@ export default function ProfileTabScreen() {
             <TouchableOpacity style={styles.modalButton} onPress={handleSignOut}>
               <Ionicons name="log-out-outline" size={24} color="#fff" />
               <Text style={styles.modalButtonText}>Sign Out</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => { setShowSettings(false); openFeedback(); }}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={24} color="#fff" />
+              <Text style={styles.modalButtonText}>Send Feedback</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -302,6 +412,76 @@ export default function ProfileTabScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowSettings(false)}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Feedback Modal */}
+      <Modal visible={showFeedback} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { paddingBottom: 24 }]}>
+            <Text style={styles.modalTitle}>Send Feedback</Text>
+
+            <Text style={[styles.label, { marginTop: 8 }]}>What is this about?</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={feedbackCategory}
+                onValueChange={setFeedbackCategory}
+                style={styles.picker}
+                itemStyle={styles.pickerItem}
+              >
+                {FEEDBACK_CATEGORIES.map(c => (
+                  <Picker.Item key={c.value} label={c.label} value={c.value} />
+                ))}
+              </Picker>
+            </View>
+
+            <Text style={[styles.label, { marginTop: 16 }]}>Your message</Text>
+            <TextInput
+              style={styles.feedbackInput}
+              placeholder="Tell us what happened, what you'd like to see, or what we can do better…"
+              placeholderTextColor="#6b7280"
+              value={feedbackMessage}
+              onChangeText={setFeedbackMessage}
+              multiline
+              maxLength={5000}
+              editable={!feedbackSending}
+            />
+            <Text style={styles.charCount}>{feedbackMessage.length}/5000</Text>
+
+            {feedbackStatus && (
+              <View
+                style={[
+                  styles.feedbackBanner,
+                  feedbackStatus.kind === 'ok' ? styles.feedbackOk : styles.feedbackErr,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.feedbackBannerText,
+                    { color: feedbackStatus.kind === 'ok' ? '#86efac' : '#fca5a5' },
+                  ]}
+                >
+                  {feedbackStatus.text}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.button, (feedbackSending || !feedbackMessage.trim()) && { opacity: 0.5 }]}
+              onPress={submitFeedback}
+              disabled={feedbackSending || !feedbackMessage.trim()}
+            >
+              {feedbackSending ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Send Feedback</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowFeedback(false)}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -333,6 +513,19 @@ const styles = StyleSheet.create({
     marginBottom: 60,
   },
   tipButtonText: { color: '#f472b6', fontSize: 15, fontWeight: '700' },
+  inviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  inviteButtonText: { color: '#c084fc', fontSize: 15, fontWeight: '700' },
   inputGroup: { marginBottom: 20 },
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },
@@ -377,5 +570,36 @@ const styles = StyleSheet.create({
   modalButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#1f2937' },
   modalButtonText: { color: '#fff', fontSize: 16, marginLeft: 16 },
   modalCloseButton: { marginTop: 24, alignItems: 'center', paddingVertical: 16, backgroundColor: '#1f2937', borderRadius: 12 },
-  modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+  modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  feedbackInput: {
+    backgroundColor: 'rgba(3, 7, 18, 0.5)',
+    borderWidth: 1,
+    borderColor: '#374151',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#fff',
+    // 16 keeps iOS Safari from auto-zooming on focus.
+    fontSize: 16,
+    minHeight: 120,
+    maxHeight: 200,
+    textAlignVertical: 'top',
+  },
+  charCount: { color: '#6b7280', fontSize: 12, textAlign: 'right', marginTop: 4 },
+  feedbackBanner: {
+    marginTop: 14,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+  },
+  feedbackOk: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  feedbackErr: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  feedbackBannerText: { fontSize: 13, fontWeight: '600' },
 });

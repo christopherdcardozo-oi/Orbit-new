@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
-import { Link, useRouter } from 'expo-router'
+import { Link, useRouter, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { Picker } from '@react-native-picker/picker'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -15,16 +15,21 @@ type Step = 'details' | 'code' | 'personality' | 'reveal'
 
 export default function SignupScreen() {
   const router = useRouter()
+  // ?campus=iastate.edu comes from the Invite a Friend flow —
+  // pre-select the picker so friends of an ISU user land right on ISU.
+  const { campus } = useLocalSearchParams<{ campus?: string }>()
   const { universities, loading: universitiesLoading } = useActiveUniversities()
   const [selectedUniversity, setSelectedUniversity] = useState('')
   const [fullEmail, setFullEmail] = useState('')
 
-  // Default to the first active campus once the list loads.
+  // Default to the invited campus (if valid) or the first active campus.
   useEffect(() => {
-    if (!selectedUniversity && universities.length > 0) {
-      setSelectedUniversity(universities[0].email_domain)
-    }
-  }, [universities, selectedUniversity])
+    if (selectedUniversity || universities.length === 0) return
+    const wanted = typeof campus === 'string' && universities.some(u => u.email_domain === campus)
+      ? campus
+      : universities[0].email_domain
+    setSelectedUniversity(wanted)
+  }, [universities, selectedUniversity, campus])
 
   // Profile details
   const [gender, setGender] = useState('Male')
