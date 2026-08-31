@@ -22,10 +22,14 @@ export default function Root({ children }: { children: React.ReactNode }) {
         {/* interactive-widget=resizes-content tells iOS Safari / Chrome to
             actually shrink the layout viewport when the on-screen keyboard
             opens, instead of leaving the page at its pre-keyboard height —
-            which is what caused the blank white gap below the form. */}
+            which is what caused the blank white gap below the form.
+            maximum-scale=1 + user-scalable=no locks pinch-zoom: without it,
+            zooming out reveals the raw edges of the fixed-width "phone
+            frame" container (blank space either side) since this is meant
+            to feel like an app, not a zoomable web page. */}
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, shrink-to-fit=no, interactive-widget=resizes-content"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content"
         />
 
         {/* Disable body scrolling on web so ScrollView behaves like native. */}
