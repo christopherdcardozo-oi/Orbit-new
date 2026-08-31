@@ -70,6 +70,10 @@ export default function ChatTabScreen() {
   // Cleared per-match as they tap up/down/skip; realtime match changes
   // also trigger a re-fetch so newly-expired matches show up right away.
   const [rateableMatches, setRateableMatches] = useState<Array<{ id: string; partnerAlias: string }>>([]);
+  // Match IDs currently showing the "Thanks for rating…" confirmation
+  // before silently unmounting. Rating is fired immediately; the card
+  // just sticks around a beat so the user sees they were heard.
+  const [thankingMatchIds, setThankingMatchIds] = useState<Set<string>>(new Set());
 
   const fetchActiveMatch = useCallback(async (uid: string) => {
     const { data: match } = await supabase
@@ -169,10 +173,51 @@ export default function ChatTabScreen() {
 
   const submitRating = async (matchId: string, rating: 'up' | 'neutral' | 'down') => {
     if (!userId) return;
-    // Optimistic removal — the card leaves the screen as soon as they tap.
-    setRateableMatches((prev) => prev.filter((m) => m.id !== matchId));
-    await supabase.from('match_ratings').insert({ match_id: matchId, rater_id: userId, rating });
+    // Flip the card to its "thanks" state immediately, fire the insert
+    // in the background, then quietly unmount after a beat so the
+    // feedback feels acknowledged instead of instantly disappearing.
+    setThankingMatchIds((prev) => new Set(prev).add(matchId));
+    supabase.from('match_ratings').insert({ match_id: matchId, rater_id: userId, rating }).then();
+    setTimeout(() => {
+      setRateableMatches((prev) => prev.filter((m) => m.id !== matchId));
+      setThankingMatchIds((prev) => {
+        const next = new Set(prev);
+        next.delete(matchId);
+        return next;
+      });
+    }, 1400);
   };
+
+  // One shared renderer for the rating card so the matched view and the
+  // unmatched view stay in lockstep — only place the card visuals or
+  // behavior live now. extraStyle lets each callsite tweak margin only.
+  const renderRatingCard = (m: { id: string; partnerAlias: string }, extraStyle?: object) => (
+    <View key={m.id} style={[styles.ratingBox, extraStyle]}>
+      {thankingMatchIds.has(m.id) ? (
+        <Text style={styles.ratingThanks}>Thanks for rating {m.partnerAlias} ✨</Text>
+      ) : (
+        <>
+          <Text style={styles.ratingQuestion}>
+            How was your connection with {m.partnerAlias}?
+          </Text>
+          <View style={styles.ratingButtons}>
+            <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
+              <Ionicons name="thumbs-up" size={22} color="#4ade80" />
+              <Text style={[styles.ratingBtnText, { color: '#4ade80' }]}>Cool</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'neutral')}>
+              <Text style={styles.ratingBtnEmoji}>😐</Text>
+              <Text style={[styles.ratingBtnText, { color: '#e5e7eb' }]}>Meh</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
+              <Ionicons name="thumbs-down" size={22} color="#f87171" />
+              <Text style={[styles.ratingBtnText, { color: '#f87171' }]}>Pass</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </View>
+  );
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -362,27 +407,7 @@ export default function ChatTabScreen() {
         {/* Also render post-match rating prompts here, so a user with a
             fresh active match still gets asked to rate yesterday's
             expired one. */}
-        {rateableMatches.map((m) => (
-          <View key={m.id} style={[styles.ratingBox, { marginTop: 20, marginHorizontal: 20 }]}>
-            <Text style={styles.ratingQuestion}>
-              How was your connection with {m.partnerAlias}?
-            </Text>
-            <View style={styles.ratingButtons}>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
-                <Ionicons name="thumbs-up" size={22} color="#4ade80" />
-                <Text style={[styles.ratingBtnText, { color: '#4ade80' }]}>Cool</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'neutral')}>
-                <Text style={styles.ratingBtnEmoji}>😐</Text>
-                <Text style={[styles.ratingBtnText, { color: '#e5e7eb' }]}>Meh</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
-                <Ionicons name="thumbs-down" size={22} color="#f87171" />
-                <Text style={[styles.ratingBtnText, { color: '#f87171' }]}>Pass</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
+        {rateableMatches.map((m) => renderRatingCard(m, { marginTop: 20, marginHorizontal: 20 }))}
         </ScrollView>
       </View>
     );
@@ -448,27 +473,7 @@ export default function ChatTabScreen() {
 
         {/* Post-match rating prompts — up to 2 unrated recent matches,
             each dismissed independently as you tap Cool/Meh/Pass. */}
-        {rateableMatches.map((m) => (
-          <View key={m.id} style={styles.ratingBox}>
-            <Text style={styles.ratingQuestion}>
-              How was your connection with {m.partnerAlias}?
-            </Text>
-            <View style={styles.ratingButtons}>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
-                <Ionicons name="thumbs-up" size={22} color="#4ade80" />
-                <Text style={[styles.ratingBtnText, { color: '#4ade80' }]}>Cool</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'neutral')}>
-                <Text style={styles.ratingBtnEmoji}>😐</Text>
-                <Text style={[styles.ratingBtnText, { color: '#e5e7eb' }]}>Meh</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
-                <Ionicons name="thumbs-down" size={22} color="#f87171" />
-                <Text style={[styles.ratingBtnText, { color: '#f87171' }]}>Pass</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
+        {rateableMatches.map((m) => renderRatingCard(m))}
       </View>
       </ScrollView>
     </View>
@@ -754,4 +759,11 @@ const styles = StyleSheet.create({
   },
   ratingBtnText: { fontSize: 14, fontWeight: '600' },
   ratingBtnEmoji: { fontSize: 20, lineHeight: 22 },
+  ratingThanks: {
+    color: '#c084fc',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
 });
