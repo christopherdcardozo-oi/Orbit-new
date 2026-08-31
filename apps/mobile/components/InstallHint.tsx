@@ -87,7 +87,7 @@ export default function InstallHint() {
       <Text style={styles.text}>
         {variant === 'android'
           ? 'Install Orbit for the full-screen app experience.'
-          : 'Add Orbit to your Home Screen: tap Share, then "Add to Home Screen".'}
+          : 'Add Orbit to your Home Screen to get notifications — tap Share, then "Add to Home Screen".'}
       </Text>
       {variant === 'android' && (
         <TouchableOpacity onPress={handleInstallClick} style={styles.installButton}>

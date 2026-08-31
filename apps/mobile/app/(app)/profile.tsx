@@ -8,6 +8,8 @@ import CosmicBackground from '../../components/CosmicBackground';
 import Skeleton from '../../components/Skeleton';
 import { PERSONALITY_QUESTIONS } from '../../lib/personality';
 import { HOBBIES, ACTIVITIES } from '../../lib/interests';
+import * as webPush from '../../lib/webPush';
+import { useIsStandalone } from '../../lib/useIsStandalone';
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 
@@ -56,6 +58,45 @@ export default function ProfileTabScreen() {
   // an interstitial modal that pulls focus away from the field they
   // need to fix.
   const [editError, setEditError] = useState<string>('');
+
+  // Web push subscription state — controls the Notifications toggle in
+  // Settings. Reads current browser permission on open and updates
+  // after subscribe/unsubscribe. Not relevant on native (future).
+  const isStandalone = useIsStandalone();
+  const [pushPermission, setPushPermission] = useState<webPush.WebPushPermission>('unsupported');
+  const [pushBusy, setPushBusy] = useState(false);
+  useEffect(() => {
+    if (showSettings) setPushPermission(webPush.getPermission());
+  }, [showSettings]);
+  const handleEnablePush = async () => {
+    setPushBusy(true);
+    const result = await webPush.subscribe();
+    setPushBusy(false);
+    setPushPermission(webPush.getPermission());
+    if (!result.ok) {
+      const reason = result.reason;
+      if (reason === 'denied') {
+        Alert.alert(
+          'Notifications blocked',
+          Platform.OS === 'web'
+            ? 'You blocked notifications for this site. Enable them in your browser site settings, then try again.'
+            : 'Notifications are blocked in your device settings.',
+        );
+      } else if (reason === 'unsupported') {
+        Alert.alert('Not supported', 'This browser does not support notifications.');
+      } else if (reason === 'no-vapid-key') {
+        Alert.alert('Not configured', 'Notification keys are missing on this build.');
+      } else {
+        Alert.alert('Something went wrong', 'Please try again.');
+      }
+    }
+  };
+  const handleDisablePush = async () => {
+    setPushBusy(true);
+    await webPush.unsubscribe();
+    setPushBusy(false);
+    setPushPermission(webPush.getPermission());
+  };
 
   useEffect(() => {
     fetchProfile();
@@ -487,6 +528,37 @@ export default function ProfileTabScreen() {
               <Text style={styles.modalButtonText}>Sign Out</Text>
             </TouchableOpacity>
 
+            {/* Notifications toggle. Only meaningful on web; native
+                builds will get a separate push flow via Expo Push. */}
+            {Platform.OS === 'web' && (
+              <View style={styles.modalButton}>
+                <Ionicons name="notifications-outline" size={24} color="#fff" />
+                <View style={{ flex: 1, marginLeft: 16 }}>
+                  <Text style={styles.modalButtonText}>Notifications</Text>
+                  {!isStandalone && pushPermission !== 'granted' && (
+                    <Text style={styles.notifHint}>
+                      Add Orbit to your Home Screen for the best experience.
+                    </Text>
+                  )}
+                </View>
+                {pushBusy ? (
+                  <ActivityIndicator color="#c084fc" />
+                ) : pushPermission === 'unsupported' ? (
+                  <Text style={styles.notifStatusMuted}>Not supported</Text>
+                ) : pushPermission === 'denied' ? (
+                  <Text style={styles.notifStatusMuted}>Blocked</Text>
+                ) : pushPermission === 'granted' ? (
+                  <TouchableOpacity onPress={handleDisablePush}>
+                    <Text style={styles.notifDisable}>Disable</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={handleEnablePush}>
+                    <Text style={styles.notifEnable}>Enable</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.modalButton}
               onPress={() => { setShowSettings(false); openFeedback(); }}
@@ -701,6 +773,10 @@ const styles = StyleSheet.create({
   modalButtonText: { color: '#fff', fontSize: 16, marginLeft: 16 },
   modalCloseButton: { marginTop: 24, alignItems: 'center', paddingVertical: 16, backgroundColor: '#1f2937', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  notifHint: { color: '#9ca3af', fontSize: 11, marginTop: 3, lineHeight: 14 },
+  notifEnable: { color: '#c084fc', fontSize: 14, fontWeight: '700' },
+  notifDisable: { color: '#9ca3af', fontSize: 14, fontWeight: '600' },
+  notifStatusMuted: { color: '#6b7280', fontSize: 13 },
   feedbackInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
     borderWidth: 1,
