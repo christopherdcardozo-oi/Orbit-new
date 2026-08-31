@@ -54,8 +54,16 @@ export default function RootLayout() {
     // would yank them into (app) the instant verifyOtp resolves, mid-wizard.
     // signup.tsx calls router.replace('/(app)') itself once that's done.
     const onSignupScreen = (segments as string[])[0] === '(auth)' && (segments as string[])[1] === 'signup'
+    // app/chat/[id].tsx is a top-level route (sibling of (app)/(auth),
+    // not inside the (app) group), so segments[0] for it is 'chat', not
+    // '(app)' — without this exemption every visit (a Start Chatting tap,
+    // a direct link, a refresh) got force-redirected straight back to
+    // '/(app)' before the chat screen ever rendered. Confirmed live: this
+    // made chat completely unreachable regardless of what was on the
+    // screen itself.
+    const onChatScreen = (segments as string[])[0] === 'chat'
 
-    if (session && !inAppGroup && !onSignupScreen) {
+    if (session && !inAppGroup && !onSignupScreen && !onChatScreen) {
       router.replace('/(app)')
     } else if (!session && inAppGroup) {
       router.replace('/')

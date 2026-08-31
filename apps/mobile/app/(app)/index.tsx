@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import CosmicBackground from '../../components/CosmicBackground';
 import { supabase } from '../../lib/supabase';
 
@@ -42,17 +43,59 @@ function formatCountdown(totalSeconds: number): string {
 
 const DEFAULT_TIMEZONE = 'America/Chicago';
 
+type ActiveMatch = {
+  id: string;
+  icebreaker: string | null;
+  partnerAlias: string;
+  partnerAvatar: string;
+};
+
 export default function ChatTabScreen() {
+  const router = useRouter();
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
   const [displayAlias, setDisplayAlias] = useState<string | null>(null);
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [secondsLeft, setSecondsLeft] = useState(() => getSecondsUntilMidnight(DEFAULT_TIMEZONE));
+  const [userId, setUserId] = useState<string | null>(null);
+  const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
+  const [loadingMatch, setLoadingMatch] = useState(true);
+
+  const fetchActiveMatch = useCallback(async (uid: string) => {
+    const { data: match } = await supabase
+      .from('matches')
+      .select('id, icebreaker, user1_id, user2_id')
+      .or(`user1_id.eq.${uid},user2_id.eq.${uid}`)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!match) {
+      setActiveMatch(null);
+      setLoadingMatch(false);
+      return;
+    }
+
+    const partnerId = match.user1_id === uid ? match.user2_id : match.user1_id;
+    const { data: partner } = await supabase
+      .from('profiles')
+      .select('display_alias, avatar')
+      .eq('id', partnerId)
+      .single();
+
+    setActiveMatch({
+      id: match.id,
+      icebreaker: match.icebreaker,
+      partnerAlias: partner?.display_alias ?? 'Mystery Connection',
+      partnerAvatar: partner?.avatar ?? 'planet',
+    });
+    setLoadingMatch(false);
+  }, []);
 
   useEffect(() => {
     const fetchProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -70,9 +113,34 @@ export default function ChatTabScreen() {
           .single();
         if (uni?.timezone) setTimezone(uni.timezone);
       }
+
+      await fetchActiveMatch(user.id);
     };
     fetchProfile();
-  }, []);
+  }, [fetchActiveMatch]);
+
+  // Live updates: if a match appears (top-up matched you while this
+  // screen is open) or your active match gets expired, reflect it
+  // without needing a manual refresh. RLS scopes what postgres_changes
+  // delivers, so no extra filtering needed here for "is this my match."
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`matches-for-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches' },
+        () => {
+          fetchActiveMatch(userId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, fetchActiveMatch]);
 
   useEffect(() => {
     setSecondsLeft(getSecondsUntilMidnight(timezone));
@@ -135,13 +203,57 @@ export default function ChatTabScreen() {
     outputRange: [-10, 10],
   });
 
+  if (loadingMatch) {
+    return (
+      <View style={styles.container}>
+        <CosmicBackground />
+        <ActivityIndicator size="large" color="#a855f7" />
+      </View>
+    );
+  }
+
+  if (activeMatch) {
+    return (
+      <View style={styles.container}>
+        <CosmicBackground />
+        <View style={styles.matchedCard}>
+          <View style={styles.matchedAvatarRing}>
+            <MaterialCommunityIcons name={activeMatch.partnerAvatar as any} size={56} color="#c084fc" />
+          </View>
+          <Text style={styles.matchedEyebrow}>You're matched with</Text>
+          <Text style={styles.matchedAlias}>{activeMatch.partnerAlias}</Text>
+
+          {activeMatch.icebreaker && (
+            <View style={styles.icebreakerBox}>
+              <Text style={styles.icebreakerLabel}>ICEBREAKER</Text>
+              <Text style={styles.icebreakerText}>{activeMatch.icebreaker}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.chatButton}
+            onPress={() => router.push(`/chat/${activeMatch.id}`)}
+          >
+            <Ionicons name="chatbubbles" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.chatButtonText}>Start Chatting</Text>
+          </TouchableOpacity>
+
+          <View style={styles.matchedCountdownBox}>
+            <Text style={styles.countdownLabel}>Connection expires in</Text>
+            <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <CosmicBackground />
       <View style={styles.radarContainer}>
         <Animated.View style={[styles.pulseRing, { transform: [{ scale }], opacity }]} />
         <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }], opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] }) }]} />
-        
+
         <Animated.View style={[styles.radarCenter, { transform: [{ translateY }] }]}>
           <LinearGradient
             colors={['#c084fc', '#4f46e5']}
@@ -151,7 +263,7 @@ export default function ChatTabScreen() {
           </LinearGradient>
         </Animated.View>
       </View>
-      
+
       <View style={styles.textContainer}>
         <Text style={styles.title}>Scanning the Cosmos</Text>
         {displayAlias && (
@@ -277,5 +389,89 @@ const styles = StyleSheet.create({
     color: '#c084fc',
     letterSpacing: 2,
     fontVariant: ['tabular-nums'],
+  },
+  matchedCard: {
+    backgroundColor: 'rgba(17, 24, 39, 0.6)',
+    padding: 28,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(192, 132, 252, 0.3)',
+    alignItems: 'center',
+    width: '100%',
+    shadowColor: '#a855f7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 30,
+  },
+  matchedAvatarRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 2,
+    borderColor: '#a855f7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  matchedEyebrow: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  matchedAlias: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  icebreakerBox: {
+    backgroundColor: 'rgba(3, 7, 18, 0.5)',
+    borderWidth: 1,
+    borderColor: '#374151',
+    borderRadius: 16,
+    padding: 16,
+    width: '100%',
+    marginBottom: 20,
+  },
+  icebreakerLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9ca3af',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  icebreakerText: {
+    fontSize: 15,
+    color: '#e5e7eb',
+    lineHeight: 22,
+    fontStyle: 'italic',
+  },
+  chatButton: {
+    flexDirection: 'row',
+    backgroundColor: '#9333ea',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  chatButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  matchedCountdownBox: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(192, 132, 252, 0.2)',
+    width: '100%',
+    alignItems: 'center',
   },
 });
