@@ -280,6 +280,22 @@ export default function ProfileTabScreen() {
               <Text style={styles.modalButtonText}>Sign Out</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => { setShowSettings(false); router.push('/legal/privacy'); }}
+            >
+              <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />
+              <Text style={styles.modalButtonText}>Privacy Policy</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => { setShowSettings(false); router.push('/legal/terms'); }}
+            >
+              <Ionicons name="document-text-outline" size={24} color="#fff" />
+              <Text style={styles.modalButtonText}>Terms of Service</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={[styles.modalButton, { borderBottomWidth: 0 }]} onPress={handleDeleteAccount}>
               <Ionicons name="trash-outline" size={24} color="#ef4444" />
               <Text style={[styles.modalButtonText, { color: '#ef4444' }]}>Delete Account</Text>

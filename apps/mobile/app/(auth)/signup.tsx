@@ -329,6 +329,17 @@ export default function SignupScreen() {
               <TouchableOpacity style={styles.button} onPress={handleSendCode} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Verification Code</Text>}
               </TouchableOpacity>
+
+              {/* Consent notice — visible before the user submits their
+                  email, links open the pages (they route out of signup
+                  and back is available). */}
+              <Text style={styles.legalNotice}>
+                By continuing you agree to our{' '}
+                <Link href="/legal/terms" style={styles.legalLink}>Terms of Service</Link>
+                {' '}and{' '}
+                <Link href="/legal/privacy" style={styles.legalLink}>Privacy Policy</Link>
+                .
+              </Text>
             </>
           )}
 
@@ -561,6 +572,20 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#c084fc',
     fontSize: 14,
+    fontWeight: '500',
+  },
+  legalNotice: {
+    color: '#6b7280',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 16,
+    paddingHorizontal: 8,
+  },
+  legalLink: {
+    color: '#c084fc',
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: '500',
   },
   revealContainer: {

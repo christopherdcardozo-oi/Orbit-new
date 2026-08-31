@@ -62,8 +62,14 @@ export default function RootLayout() {
     // made chat completely unreachable regardless of what was on the
     // screen itself.
     const onChatScreen = (segments as string[])[0] === 'chat'
+    // Privacy Policy and Terms of Service live under /legal — they need
+    // to stay reachable from every entry point (signed-out signup footer,
+    // in-app Settings sheet, direct URL from anywhere), so the
+    // session-based redirect below must skip them the same way it skips
+    // the chat and signup routes.
+    const onLegalScreen = (segments as string[])[0] === 'legal'
 
-    if (session && !inAppGroup && !onSignupScreen && !onChatScreen) {
+    if (session && !inAppGroup && !onSignupScreen && !onChatScreen && !onLegalScreen) {
       router.replace('/(app)')
     } else if (!session && inAppGroup) {
       router.replace('/')
