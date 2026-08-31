@@ -138,14 +138,13 @@ export default function ChatTabScreen() {
     })));
   }, []);
 
-  const submitRating = async (matchId: string, rating: 'up' | 'down') => {
+  // Three real tiers now — 'neutral' ("Meh") is an actual recorded
+  // rating, not a dismiss-without-rating action like the old "Skip" was.
+  const submitRating = async (matchId: string, rating: 'up' | 'neutral' | 'down') => {
     if (!userId) return;
     // Optimistic removal — the card leaves the screen as soon as they tap.
     setRateableMatches((prev) => prev.filter((m) => m.id !== matchId));
     await supabase.from('match_ratings').insert({ match_id: matchId, rater_id: userId, rating });
-  };
-  const skipRating = (matchId: string) => {
-    setRateableMatches((prev) => prev.filter((m) => m.id !== matchId));
   };
 
   useEffect(() => {
@@ -331,15 +330,16 @@ export default function ChatTabScreen() {
             </Text>
             <View style={styles.ratingButtons}>
               <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
-                <Ionicons name="thumbs-up" size={22} color="#86efac" />
-                <Text style={[styles.ratingBtnText, { color: '#86efac' }]}>Good</Text>
+                <Ionicons name="thumbs-up" size={22} color="#4ade80" />
+                <Text style={[styles.ratingBtnText, { color: '#4ade80' }]}>Cool</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'neutral')}>
+                <Text style={styles.ratingBtnEmoji}>😐</Text>
+                <Text style={[styles.ratingBtnText, { color: '#e5e7eb' }]}>Meh</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
-                <Ionicons name="thumbs-down" size={22} color="#fca5a5" />
-                <Text style={[styles.ratingBtnText, { color: '#fca5a5' }]}>Meh</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.ratingBtn, { flex: 0.6 }]} onPress={() => skipRating(m.id)}>
-                <Text style={[styles.ratingBtnText, { color: '#6b7280' }]}>Skip</Text>
+                <Ionicons name="thumbs-down" size={22} color="#f87171" />
+                <Text style={[styles.ratingBtnText, { color: '#f87171' }]}>Pass</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -399,7 +399,7 @@ export default function ChatTabScreen() {
         </View>
 
         {/* Post-match rating prompts — up to 2 unrated recent matches,
-            each dismissed independently as you tap up/down/skip. */}
+            each dismissed independently as you tap Cool/Meh/Pass. */}
         {rateableMatches.map((m) => (
           <View key={m.id} style={styles.ratingBox}>
             <Text style={styles.ratingQuestion}>
@@ -407,18 +407,16 @@ export default function ChatTabScreen() {
             </Text>
             <View style={styles.ratingButtons}>
               <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'up')}>
-                <Ionicons name="thumbs-up" size={22} color="#86efac" />
-                <Text style={[styles.ratingBtnText, { color: '#86efac' }]}>Good</Text>
+                <Ionicons name="thumbs-up" size={22} color="#4ade80" />
+                <Text style={[styles.ratingBtnText, { color: '#4ade80' }]}>Cool</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'neutral')}>
+                <Text style={styles.ratingBtnEmoji}>😐</Text>
+                <Text style={[styles.ratingBtnText, { color: '#e5e7eb' }]}>Meh</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.ratingBtn} onPress={() => submitRating(m.id, 'down')}>
-                <Ionicons name="thumbs-down" size={22} color="#fca5a5" />
-                <Text style={[styles.ratingBtnText, { color: '#fca5a5' }]}>Meh</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.ratingBtn, { flex: 0.6 }]}
-                onPress={() => skipRating(m.id)}
-              >
-                <Text style={[styles.ratingBtnText, { color: '#6b7280' }]}>Skip</Text>
+                <Ionicons name="thumbs-down" size={22} color="#f87171" />
+                <Text style={[styles.ratingBtnText, { color: '#f87171' }]}>Pass</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -686,4 +684,5 @@ const styles = StyleSheet.create({
     borderColor: '#1f2937',
   },
   ratingBtnText: { fontSize: 14, fontWeight: '600' },
+  ratingBtnEmoji: { fontSize: 20, lineHeight: 22 },
 });
