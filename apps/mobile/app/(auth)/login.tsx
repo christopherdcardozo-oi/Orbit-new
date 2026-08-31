@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native'
-import { Link } from 'expo-router'
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
+import { Link, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
-import * as Linking from 'expo-linking'
 
 import CosmicBackground from '../../components/CosmicBackground'
 
@@ -14,17 +13,30 @@ import CosmicBackground from '../../components/CosmicBackground'
 const UNIVERSITY_LABEL = 'Iowa State University'
 
 export default function LoginScreen() {
+  const router = useRouter()
   const [selectedUniversity] = useState('iastate.edu')
   const [fullEmail, setFullEmail] = useState('')
   const [loading, setLoading] = useState(false)
-  
+
+  // Inline error state instead of alert()/window.alert(): alert() is
+  // browser-native on web (easy to miss, blocked by some automation/
+  // embedded contexts) and not guaranteed to behave the same on native
+  // iOS/Android. A styled banner is visible everywhere, consistently.
+  const [errorMessage, setErrorMessage] = useState('')
+  // True only when the email is well-formed/allowed but has no account
+  // yet — lets us offer a direct link to signup instead of a dead end.
+  const [noAccountFound, setNoAccountFound] = useState(false)
+
   // OTP State
   const [otpPhase, setOtpPhase] = useState(false)
   const [code, setCode] = useState('')
 
   const handleSendCode = async () => {
+    setErrorMessage('')
+    setNoAccountFound(false)
+
     if (!fullEmail) {
-      alert('Error: Please enter your email.')
+      setErrorMessage('Please enter your email.')
       return
     }
 
@@ -41,9 +53,30 @@ export default function LoginScreen() {
       )
       if (allowError || !allowed) {
         setLoading(false)
-        alert(`Invalid Email: You must use your @${selectedUniversity} email`)
+        setErrorMessage(`You must use your @${selectedUniversity} email, or an approved admin/test email.`)
         return
       }
+    }
+
+    // signInWithOtp will happily create a brand-new account for an
+    // unrecognized (but allowed) email — this app's onboarding (profile
+    // details, personality questions, the reveal screen) only happens in
+    // signup.tsx, so silently creating an account here would land someone
+    // in the app with a completely empty profile. Check first and, if
+    // there's no account yet, send them to sign up instead of sending a
+    // code at all.
+    const { data: exists, error: existsError } = await supabase.rpc(
+      'check_email_exists',
+      { email_to_check: emailStr }
+    )
+    if (existsError) {
+      console.warn('check_email_exists RPC error:', existsError)
+    }
+    if (!exists) {
+      setLoading(false)
+      setNoAccountFound(true)
+      setErrorMessage("We don't have an account for that email yet.")
+      return
     }
 
     const { error } = await supabase.auth.signInWithOtp({
@@ -51,7 +84,7 @@ export default function LoginScreen() {
     })
     setLoading(false)
     if (error) {
-      alert(`Error: ${error.message}`)
+      setErrorMessage(error.message)
     } else {
       setOtpPhase(true)
     }
@@ -59,6 +92,7 @@ export default function LoginScreen() {
 
   const handleVerifyCode = async () => {
     if (!code) return
+    setErrorMessage('')
     setLoading(true)
     const emailStr = fullEmail.toLowerCase().trim()
     const { error } = await supabase.auth.verifyOtp({
@@ -68,13 +102,13 @@ export default function LoginScreen() {
     })
     setLoading(false)
     if (error) {
-      alert(`Error: ${error.message}`)
+      setErrorMessage(error.message)
     }
     // If successful, app/_layout.tsx will auto-redirect to dashboard
   }
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -101,15 +135,26 @@ export default function LoginScreen() {
                 placeholder="e.g. cy@iastate.edu"
                 placeholderTextColor="#6b7280"
                 value={fullEmail}
-                onChangeText={setFullEmail}
+                onChangeText={(text) => { setFullEmail(text); setErrorMessage(''); setNoAccountFound(false) }}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
               />
             </View>
 
-            <TouchableOpacity 
-              style={styles.button} 
+            {errorMessage ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+                {noAccountFound && (
+                  <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+                    <Text style={styles.errorLink}>Sign up here →</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={styles.button}
               onPress={handleSendCode}
               disabled={loading}
             >
@@ -129,14 +174,20 @@ export default function LoginScreen() {
                 placeholder="00000000"
                 placeholderTextColor="#6b7280"
                 value={code}
-                onChangeText={setCode}
+                onChangeText={(text) => { setCode(text); setErrorMessage('') }}
                 keyboardType="number-pad"
                 maxLength={8}
               />
             </View>
 
-            <TouchableOpacity 
-              style={styles.button} 
+            {errorMessage ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={styles.button}
               onPress={handleVerifyCode}
               disabled={loading || code.length < 6}
             >
@@ -147,7 +198,7 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkButton} onPress={() => setOtpPhase(false)}>
+            <TouchableOpacity style={styles.linkButton} onPress={() => { setOtpPhase(false); setErrorMessage('') }}>
               <Text style={styles.linkText}>Back to Email</Text>
             </TouchableOpacity>
           </>
@@ -236,6 +287,26 @@ const styles = StyleSheet.create({
     fontSize: 24,
     textAlign: 'center',
     letterSpacing: 8,
+  },
+  errorBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#fca5a5',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  errorLink: {
+    color: '#fca5a5',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 8,
+    textDecorationLine: 'underline',
   },
   button: {
     backgroundColor: '#9333ea',

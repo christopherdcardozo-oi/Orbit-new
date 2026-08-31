@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
 import { Link, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { Picker } from '@react-native-picker/picker'
@@ -39,17 +39,27 @@ export default function SignupScreen() {
   const [step, setStep] = useState<Step>('details')
   const [code, setCode] = useState('')
 
+  // Inline error state instead of alert()/window.alert() — see the
+  // matching comment in app/(auth)/login.tsx for why.
+  const [errorMessage, setErrorMessage] = useState('')
+  // True only for the "you already have an account" case, so we can
+  // offer a direct link to login instead of a dead end.
+  const [accountExists, setAccountExists] = useState(false)
+
   const handleSendCode = async () => {
+    setErrorMessage('')
+    setAccountExists(false)
+
     if (!fullEmail) {
-      alert('Error: Please enter your email.')
+      setErrorMessage('Please enter your email.')
       return
     }
     if (!major.trim()) {
-      alert('Error: Please enter your major.')
+      setErrorMessage('Please enter your major.')
       return
     }
     if (gender === 'Other' && !customGender.trim()) {
-      alert('Error: Please enter your identity.')
+      setErrorMessage('Please enter your identity.')
       return
     }
 
@@ -66,7 +76,7 @@ export default function SignupScreen() {
       )
       if (allowError || !allowed) {
         setLoading(false)
-        alert(`Invalid Email: You must use your @${selectedUniversity} email`)
+        setErrorMessage(`You must use your @${selectedUniversity} email, or an approved admin/test email.`)
         return
       }
     }
@@ -80,7 +90,8 @@ export default function SignupScreen() {
 
     if (exists) {
       setLoading(false)
-      alert('Account Exists: That email has already been used. Please log in instead.')
+      setAccountExists(true)
+      setErrorMessage('That email already has an account.')
       return
     }
 
@@ -90,7 +101,7 @@ export default function SignupScreen() {
 
     setLoading(false)
     if (error) {
-      alert(error.message)
+      setErrorMessage(error.message)
     } else {
       setStep('code')
     }
@@ -98,6 +109,7 @@ export default function SignupScreen() {
 
   const handleVerifyCode = async () => {
     if (!code) return
+    setErrorMessage('')
     setLoading(true)
     const emailStr = fullEmail.toLowerCase().trim()
 
@@ -110,7 +122,7 @@ export default function SignupScreen() {
 
     if (authError) {
       setLoading(false)
-      alert(`Error: ${authError.message}`)
+      setErrorMessage(authError.message)
       return
     }
 
@@ -142,11 +154,12 @@ export default function SignupScreen() {
   }
 
   const handleSavePersonality = async () => {
+    setErrorMessage('')
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       setLoading(false)
-      alert('Error: Session expired — please start over.')
+      setErrorMessage('Session expired — please start over.')
       return
     }
 
@@ -215,7 +228,7 @@ export default function SignupScreen() {
                   placeholder="e.g. cy@iastate.edu"
                   placeholderTextColor="#6b7280"
                   value={fullEmail}
-                  onChangeText={setFullEmail}
+                  onChangeText={(text) => { setFullEmail(text); setErrorMessage(''); setAccountExists(false) }}
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="email-address"
@@ -274,6 +287,19 @@ export default function SignupScreen() {
                 </View>
               </View>
 
+              {errorMessage ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                  {accountExists && (
+                    <Link href="/(auth)/login" asChild>
+                      <TouchableOpacity>
+                        <Text style={styles.errorLink}>Log in here →</Text>
+                      </TouchableOpacity>
+                    </Link>
+                  )}
+                </View>
+              ) : null}
+
               <TouchableOpacity style={styles.button} onPress={handleSendCode} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Verification Code</Text>}
               </TouchableOpacity>
@@ -289,17 +315,23 @@ export default function SignupScreen() {
                   placeholder="00000000"
                   placeholderTextColor="#6b7280"
                   value={code}
-                  onChangeText={setCode}
+                  onChangeText={(text) => { setCode(text); setErrorMessage('') }}
                   keyboardType="number-pad"
                   maxLength={8}
                 />
               </View>
 
+              {errorMessage ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
               <TouchableOpacity style={styles.button} onPress={handleVerifyCode} disabled={loading || code.length < 6}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify Code</Text>}
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.linkButton} onPress={() => setStep('details')}>
+              <TouchableOpacity style={styles.linkButton} onPress={() => { setStep('details'); setErrorMessage('') }}>
                 <Text style={styles.linkText}>Back to details</Text>
               </TouchableOpacity>
             </>
@@ -307,6 +339,12 @@ export default function SignupScreen() {
 
           {step === 'personality' && (
             <>
+              {errorMessage ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
               {PERSONALITY_QUESTIONS.map((q, i) => (
                 <View key={q.key} style={styles.inputGroup}>
                   <Text style={styles.label}>{q.label}</Text>
@@ -457,6 +495,26 @@ const styles = StyleSheet.create({
     fontSize: 24,
     textAlign: 'center',
     letterSpacing: 8,
+  },
+  errorBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#fca5a5',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  errorLink: {
+    color: '#fca5a5',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 8,
+    textDecorationLine: 'underline',
   },
   button: {
     backgroundColor: '#9333ea',
