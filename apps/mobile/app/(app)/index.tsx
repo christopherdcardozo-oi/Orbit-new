@@ -348,6 +348,17 @@ export default function ChatTabScreen() {
           </View>
         </View>
 
+        {/* Invite a friend — visible on the matched view too. A user
+            who's enjoying their match is the best moment to nudge
+            them to bring more friends onto the campus. */}
+        <TouchableOpacity
+          style={[styles.lobbyInviteButton, { marginHorizontal: 20 }]}
+          onPress={handleInviteFriend}
+        >
+          <Ionicons name="share-social" size={18} color="#c084fc" />
+          <Text style={styles.lobbyInviteButtonText}>Invite a Friend from Your Campus</Text>
+        </TouchableOpacity>
+
         {/* Also render post-match rating prompts here, so a user with a
             fresh active match still gets asked to rate yesterday's
             expired one. */}
