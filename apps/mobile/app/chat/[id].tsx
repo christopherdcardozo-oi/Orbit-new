@@ -584,6 +584,10 @@ export default function ChatScreen() {
     setReportBusy(true)
     setReportStatus(null)
     // reason = category (short slug); details = free text (optional).
+    // Reports and Blocks are combined per the doc — reporting almost
+    // always implies you don't want to interact with this person again,
+    // and making it two taps was silently losing "I reported but still
+    // got matched with them again" complaints.
     const { error } = await supabase.from('reports').insert({
       match_id: id,
       reporter_id: userId,
@@ -591,16 +595,29 @@ export default function ChatScreen() {
       reason: reportCategory,
       details: reportDetails.trim() || null,
     })
-    setReportBusy(false)
     if (error) {
+      setReportBusy(false)
       const msg = error.code === '23505'
         ? "You've already reported this person for this match."
         : error.message
       setReportStatus({ kind: 'err', text: msg })
       return
     }
-    setReportStatus({ kind: 'ok', text: 'Thanks — the report has been sent to our team.' })
+    // Fire-and-forget the block. Even if it fails, the report succeeded
+    // and the user is on their way out — the matchmaker still has the
+    // report row visible to admins for later manual action.
+    await supabase.from('blocked_pairs').insert({
+      blocker_id: userId,
+      blocked_id: match.partnerId,
+    })
+    setReportBusy(false)
+    setReportStatus({ kind: 'ok', text: 'Sent. You won’t match again.' })
     setReportDetails('')
+    // Brief pause so they can read the confirmation, then leave.
+    setTimeout(() => {
+      setReportOpen(false)
+      handleBack()
+    }, 1200)
   }
 
   const confirmBlock = async () => {
@@ -959,7 +976,7 @@ export default function ChatScreen() {
               onPress={() => { setMenuOpen(false); setReportOpen(true); setReportStatus(null) }}
             >
               <Ionicons name="flag-outline" size={20} color="#fca5a5" />
-              <Text style={[styles.menuItemText, { color: '#fca5a5' }]}>Report {match.partnerAlias}</Text>
+              <Text style={[styles.menuItemText, { color: '#fca5a5' }]}>Report and Block {match.partnerAlias}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuItem}
@@ -979,8 +996,10 @@ export default function ChatScreen() {
       <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => setReportOpen(false)}>
         <View style={styles.menuBackdrop}>
           <View style={[styles.menuSheet, { padding: 20 }]}>
-            <Text style={styles.sheetTitle}>Report {match.partnerAlias}</Text>
-            <Text style={styles.sheetSubtitle}>We'll review this — thank you for keeping Orbit safe.</Text>
+            <Text style={styles.sheetTitle}>Report and Block {match.partnerAlias}</Text>
+            <Text style={styles.sheetSubtitle}>
+              We'll review this and you two will never match again. Thanks for keeping Orbit safe.
+            </Text>
             {REPORT_CATEGORIES.map((c) => (
               <TouchableOpacity
                 key={c.value}
@@ -1019,7 +1038,7 @@ export default function ChatScreen() {
                 onPress={submitReport}
                 disabled={reportBusy || reportStatus?.kind === 'ok'}
               >
-                {reportBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Send Report</Text>}
+                {reportBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Report and Block</Text>}
               </TouchableOpacity>
             </View>
           </View>
