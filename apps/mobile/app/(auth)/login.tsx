@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native'
 import { Link, useRouter } from 'expo-router'
 import { Picker } from '@react-native-picker/picker'
 import { supabase } from '../../lib/supabase'
@@ -120,6 +120,12 @@ export default function LoginScreen() {
     >
       <CosmicBackground />
       <View style={styles.card}>
+        <Image
+          source={require('../../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="Orbit"
+        />
         <Text style={styles.title}>Welcome Back 🚀</Text>
         <Text style={styles.subtitle}>
           {otpPhase ? 'Enter the 8-digit code sent to your email' : 'Select your campus and enter your email'}
@@ -257,6 +263,12 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: '#1f2937',
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    alignSelf: 'center',
+    marginBottom: 8,
   },
   title: {
     fontSize: 28,

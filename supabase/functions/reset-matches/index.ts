@@ -653,10 +653,13 @@ async function runMatchmakingForCampus(
 // ---------- Top-level tick ----------
 
 async function runMatchmakingTick(supabase: SupabaseClient): Promise<MatchmakingResults> {
+  // is_admin excludes test/admin accounts (mine + Christopher's — anyone
+  // in admin_allowlist) from the matching pool. See migration 034.
   const { data: profiles, error: profileError } = await supabase
     .from('profiles')
     .select('*')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('is_admin', false);
 
   if (profileError || !profiles) {
     return {
@@ -727,6 +730,7 @@ async function runTopupForDomain(supabase: SupabaseClient, domain: string): Prom
     .from('profiles')
     .select('*')
     .eq('is_active', true)
+    .eq('is_admin', false)
     .eq('email_domain', domain);
 
   if (profileError) {

@@ -44,3 +44,4 @@ apps/mobile/GoogleService-Info.plist
 # source of truth is app.json, never these folders.
 apps/mobile/ios/
 apps/mobile/android/
+supabase/.temp/

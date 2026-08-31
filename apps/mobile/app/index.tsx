@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native'
 import { Link } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 
@@ -11,6 +11,12 @@ export default function LandingPage() {
       <CosmicBackground />
       
       <View style={styles.content}>
+        <Image
+          source={require('../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="Orbit"
+        />
         <Text style={styles.title}>Orbit</Text>
         <Text style={styles.subtitle}>Anonymous connections. One campus. Reset at midnight.</Text>
 
@@ -57,6 +63,11 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     marginTop: 40,
+  },
+  logo: {
+    width: 160,
+    height: 160,
+    marginBottom: 8,
   },
   title: {
     fontSize: 48,
