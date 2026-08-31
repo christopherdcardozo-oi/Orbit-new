@@ -3,7 +3,7 @@ import { Slot, useRouter, useSegments, ThemeProvider, DarkTheme } from 'expo-rou
 import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native'
-import { registerForPushNotificationsAsync, savePushToken } from '../lib/notifications'
+import { registerForPushNotificationsAsync } from '../lib/notifications'
 import InstallHint from '../components/InstallHint'
 
 export default function RootLayout() {
@@ -33,12 +33,12 @@ export default function RootLayout() {
     }
   }, [])
 
-  const setupPushNotifications = async (userId: string) => {
+  const setupPushNotifications = async (_userId: string) => {
+    // Registration handles the DB upsert internally now (previously
+    // this passed the token back through savePushToken). Firebase
+    // messaging replaces the old Expo push token flow.
     try {
-      const token = await registerForPushNotificationsAsync()
-      if (token) {
-        await savePushToken(userId, token)
-      }
+      await registerForPushNotificationsAsync()
     } catch (e) {
       console.log('Error setting up push notifications', e)
     }

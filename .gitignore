@@ -34,3 +34,13 @@ sources/
 .mcp.json
 
 
+
+# Firebase native config (paths referenced by expo prebuild; contain
+# secrets not appropriate for git — user drops them in locally per
+# docs/native-build-setup.md).
+apps/mobile/google-services.json
+apps/mobile/GoogleService-Info.plist
+# Expo prebuild output — regenerated from app.json + plugins; the
+# source of truth is app.json, never these folders.
+apps/mobile/ios/
+apps/mobile/android/

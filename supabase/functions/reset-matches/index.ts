@@ -638,11 +638,12 @@ async function runMatchmakingForCampus(
       const { error: historyInsertError } = await supabase.from('match_history').insert(newHistory);
       if (historyInsertError) {
         result.errors.push(`Failed to insert history for ${domain}: ${historyInsertError.message}`);
-      } else {
-        for (const n of notifications) {
-          await sendPushNotification(n.token, n.title, n.body);
-        }
       }
+      // Note: push notifications used to be sent from here via the
+      // legacy exp.host endpoint. That path is retired — the
+      // matches AFTER INSERT trigger (migration 027 + 033) now
+      // fires both web push (VAPID) and native push (FCM v1) for
+      // every new match.
     }
   }
 
