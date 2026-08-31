@@ -72,43 +72,16 @@ export default function RootLayout() {
 
   const isWeb = Platform.OS === 'web'
 
-  // iOS Safari has ignored the user-scalable=no / maximum-scale=1 viewport
-  // meta tags since iOS 10 (an accessibility decision) — the only way to
-  // actually block pinch-zoom there is intercepting the gesture events
-  // directly. Pinch-zooming this app doesn't just look bad, it desyncs
-  // touch coordinates from the visual viewport, so taps land on the wrong
-  // element (this is what broke the chat back-button and sign-out).
-  useEffect(() => {
-    if (!isWeb) return
-
-    const preventGesture = (e: Event) => e.preventDefault()
-    // Safari-only gesture events, fired for pinch/rotate.
-    document.addEventListener('gesturestart', preventGesture)
-    document.addEventListener('gesturechange', preventGesture)
-    document.addEventListener('gestureend', preventGesture)
-
-    // Also blocks the two-finger pinch on non-Safari engines, and
-    // double-tap-to-zoom everywhere.
-    let lastTouchEnd = 0
-    const preventMultiTouch = (e: TouchEvent) => {
-      if (e.touches.length > 1) e.preventDefault()
-    }
-    const preventDoubleTapZoom = (e: TouchEvent) => {
-      const now = Date.now()
-      if (now - lastTouchEnd <= 300) e.preventDefault()
-      lastTouchEnd = now
-    }
-    document.addEventListener('touchmove', preventMultiTouch, { passive: false })
-    document.addEventListener('touchend', preventDoubleTapZoom, { passive: false })
-
-    return () => {
-      document.removeEventListener('gesturestart', preventGesture)
-      document.removeEventListener('gesturechange', preventGesture)
-      document.removeEventListener('gestureend', preventGesture)
-      document.removeEventListener('touchmove', preventMultiTouch)
-      document.removeEventListener('touchend', preventDoubleTapZoom)
-    }
-  }, [isWeb])
+  // A previous fix here globally intercepted gesturestart/touchmove/
+  // touchend on `document` to block pinch-zoom, on the theory that zoom
+  // was desyncing taps. It wasn't needed — the actual bugs were real
+  // horizontal overflow (CosmicBackground's off-edge glow blobs, see
+  // components/CosmicBackground.tsx) and a sub-16px composer font
+  // triggering iOS's forced zoom-on-focus, both fixed at the source.
+  // Removed because blocking touchend/touchmove globally (not scoped
+  // away from inputs) broke double-tap-to-select and other normal
+  // text-field interactions everywhere in the app, including the login
+  // email field.
 
   if (!initialized) {
     return (

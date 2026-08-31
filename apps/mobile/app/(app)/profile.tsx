@@ -82,14 +82,21 @@ export default function ProfileTabScreen() {
   };
 
   const handleSignOut = async () => {
-    // Previously relied entirely on the root layout's onAuthStateChange
-    // redirect to kick in after signOut() resolved — worked most of the
-    // time, but any hiccup there (a stale listener, a swallowed error)
-    // left the user stuck on this screen with no feedback at all.
-    // Navigate explicitly and surface errors instead of failing silently.
+    // Close the Settings sheet immediately, synchronously, regardless of
+    // what signOut() below does — this was the actual bug: signOut()
+    // was succeeding, but showSettings never got reset to false, so the
+    // modal (and the profile screen loading behind it, now re-fetching
+    // for a user that's already gone) stayed on screen even after the
+    // root layout had already navigated away underneath it.
+    setShowSettings(false);
     const { error } = await supabase.auth.signOut();
     if (error) {
-      Alert.alert('Error signing out', error.message);
+      // Alert.alert is a silent no-op on web in some RN-web versions —
+      // don't rely on it as the only signal. Logging keeps this
+      // debuggable; the root layout's redirect only fires once session
+      // is actually null, so a real signOut failure just leaves you on
+      // the (now-closed-modal) app screen rather than looking broken.
+      console.warn('Sign out failed:', error.message);
       return;
     }
     router.replace('/');

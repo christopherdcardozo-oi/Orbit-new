@@ -4,8 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
-  Easing,
   FlatList,
   TextInput,
   KeyboardAvoidingView,
@@ -55,7 +53,11 @@ export default function ChatScreen() {
 
   const [timeLeftStr, setTimeLeftStr] = useState('')
   const [expired, setExpired] = useState(false)
-  const flashAnim = useRef(new Animated.Value(0)).current
+  // Static red urgency tint behind the chat — was an Animated.loop pulse
+  // before; kept the same "gets more intense as time runs out" signal but
+  // as a plain, non-animated opacity. The comet in CosmicBackground is the
+  // only motion on this screen now.
+  const [flashOpacity, setFlashOpacity] = useState(0)
   const seenMessageIds = useRef(new Set<string>())
 
   // ---------- Initial load ----------
@@ -232,47 +234,15 @@ export default function ChatScreen() {
 
     const { diffHours, diffMinutes } = calculateTimeLeft()
 
-    let toValue = 0.3
-    let duration = 1000
+    // Same three urgency tiers the old pulse used for its peak brightness —
+    // just held as a fixed value instead of animating toward it.
     if (diffHours === 0 && diffMinutes <= 10) {
-      toValue = 0.9
-      duration = 500
+      setFlashOpacity(0.35)
     } else if (diffHours === 0) {
-      toValue = 0.6
-      duration = 800
+      setFlashOpacity(0.22)
+    } else {
+      setFlashOpacity(0.1)
     }
-
-    Animated.sequence([
-      Animated.timing(flashAnim, {
-        toValue: 1,
-        duration: 500,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-      Animated.timing(flashAnim, {
-        toValue: 0.1,
-        duration: 4500,
-        easing: Easing.in(Easing.ease),
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    ]).start(() => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(flashAnim, {
-            toValue,
-            duration,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-          Animated.timing(flashAnim, {
-            toValue: 0.1,
-            duration,
-            easing: Easing.in(Easing.ease),
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-        ])
-      ).start()
-    })
 
     const interval = setInterval(calculateTimeLeft, 30000)
     return () => clearInterval(interval)
@@ -354,14 +324,10 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <CosmicBackground />
 
-      <Animated.View
+      <View
         style={[
           StyleSheet.absoluteFill,
-          {
-            backgroundColor: 'red',
-            opacity: flashAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.25] }),
-            pointerEvents: 'none',
-          },
+          { backgroundColor: 'red', opacity: flashOpacity, pointerEvents: 'none' },
         ]}
       />
 
@@ -628,7 +594,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     color: '#fff',
-    fontSize: 15,
+    // iOS Safari force-zooms in on any input with fontSize under 16 —
+    // that's what was causing the overflow/blank-margin state on this
+    // specific screen: the forced zoom collided with the meta tag's
+    // zoom lock (maximum-scale=1) and left the layout stuck. 16 is the
+    // floor that keeps Safari from ever triggering that zoom at all.
+    fontSize: 16,
     maxHeight: 100,
     marginRight: 8,
   },
