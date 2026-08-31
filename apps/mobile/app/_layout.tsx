@@ -144,11 +144,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     alignItems: 'center',
+    // Root-level safety net: CosmicBackground's ambient glow blobs
+    // (intentionally width:150%, positioned off-edge) were one confirmed
+    // source of real horizontal overflow that made iOS Safari auto-zoom
+    // the whole page out and never zoom back in — fixed at the source,
+    // but clipping here too means any other screen's stray absolutely-
+    // positioned/oversized element can't do the same thing undetected.
+    overflow: 'hidden',
   },
   appContainer: {
     flex: 1,
     width: '100%',
     backgroundColor: '#030712',
+    overflow: 'hidden',
   },
   webContainer: {
     maxWidth: 440,
