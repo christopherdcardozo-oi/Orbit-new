@@ -6,6 +6,7 @@ import { Picker } from '@react-native-picker/picker'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
+import { HOBBIES, ACTIVITIES } from '../../lib/interests'
 import { useActiveUniversities } from '../../lib/universities'
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
@@ -39,6 +40,11 @@ export default function SignupScreen() {
 
   // Personality answers, one per PERSONALITY_QUESTIONS entry
   const [personality, setPersonality] = useState<string[]>([])
+  // Multi-select chip state — matches the old apps/web signup design.
+  // Hobbies is required (at least one); activities is optional (plenty
+  // of legit users aren't in any campus organizations).
+  const [hobbies, setHobbies] = useState<string[]>([])
+  const [activities, setActivities] = useState<string[]>([])
 
   // What we reveal at the end — generated server-side by the
   // handle_new_user() trigger (see supabase/migrations/011_*).
@@ -163,6 +169,11 @@ export default function SignupScreen() {
     setPersonality(next)
   }
 
+  const toggleChip = (v: string, list: string[], setList: (l: string[]) => void) => {
+    setList(list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+    if (errorMessage) setErrorMessage('')
+  }
+
   const handleSavePersonality = async () => {
     setErrorMessage('')
     // All four personality answers are required — they're the strongest
@@ -172,6 +183,13 @@ export default function SignupScreen() {
     const missing = PERSONALITY_QUESTIONS.some((_, i) => !personality[i] || !personality[i].trim())
     if (missing) {
       setErrorMessage('Please answer all four questions before continuing.')
+      return
+    }
+    // At least one hobby — everyone has one, and it's the second-heaviest
+    // matching signal (+2 per shared hobby). Activities is optional
+    // since plenty of legit users aren't in any campus organizations.
+    if (hobbies.length === 0) {
+      setErrorMessage('Please pick at least one hobby.')
       return
     }
 
@@ -185,11 +203,11 @@ export default function SignupScreen() {
 
     const { error: updateError } = await supabase
       .from('profiles')
-      .update({ personality })
+      .update({ personality, hobbies, activities })
       .eq('id', user.id)
 
     if (updateError) {
-      console.warn('Failed to save personality answers:', updateError)
+      console.warn('Failed to save personality/interests:', updateError)
     }
 
     // Fetch what the trigger generated at signup — the whole point of
@@ -414,6 +432,38 @@ export default function SignupScreen() {
                 </View>
               ))}
 
+              {/* Hobbies (required — at least one). */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Hobbies · pick a few</Text>
+                <View style={styles.chipRow}>
+                  {HOBBIES.map((h) => (
+                    <TouchableOpacity
+                      key={h}
+                      style={[styles.chip, hobbies.includes(h) && styles.chipActiveHobby]}
+                      onPress={() => toggleChip(h, hobbies, setHobbies)}
+                    >
+                      <Text style={[styles.chipText, hobbies.includes(h) && { color: '#fff' }]}>{h}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Activities (optional — not everyone's in a campus org). */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Campus activities · optional</Text>
+                <View style={styles.chipRow}>
+                  {ACTIVITIES.map((a) => (
+                    <TouchableOpacity
+                      key={a}
+                      style={[styles.chip, activities.includes(a) && styles.chipActiveActivity]}
+                      onPress={() => toggleChip(a, activities, setActivities)}
+                    >
+                      <Text style={[styles.chipText, activities.includes(a) && { color: '#fff' }]}>{a}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
               <TouchableOpacity style={styles.button} onPress={handleSavePersonality} disabled={loading}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
               </TouchableOpacity>
@@ -588,6 +638,33 @@ const styles = StyleSheet.create({
     color: '#c084fc',
     fontSize: 14,
     fontWeight: '500',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  chipActiveHobby: {
+    backgroundColor: '#9333ea',
+    borderColor: '#9333ea',
+  },
+  chipActiveActivity: {
+    backgroundColor: '#4f46e5',
+    borderColor: '#4f46e5',
+  },
+  chipText: {
+    color: '#e5e7eb',
+    fontSize: 13,
+    fontWeight: '600',
   },
   legalNotice: {
     color: '#6b7280',

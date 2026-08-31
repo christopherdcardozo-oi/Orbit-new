@@ -7,6 +7,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import CosmicBackground from '../../components/CosmicBackground';
 import Skeleton from '../../components/Skeleton';
 import { PERSONALITY_QUESTIONS } from '../../lib/personality';
+import { HOBBIES, ACTIVITIES } from '../../lib/interests';
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 
@@ -48,6 +49,8 @@ export default function ProfileTabScreen() {
   const [major, setMajor] = useState('');
   const [year, setYear] = useState('');
   const [personality, setPersonality] = useState<string[]>([]);
+  const [hobbies, setHobbies] = useState<string[]>([]);
+  const [activities, setActivities] = useState<string[]>([]);
 
   useEffect(() => {
     fetchProfile();
@@ -71,6 +74,8 @@ export default function ProfileTabScreen() {
       setMajor(data.major || '');
       setYear(data.year_in_school || '');
       setPersonality(data.personality || []);
+      setHobbies(data.hobbies || []);
+      setActivities(data.activities || []);
     } catch (error) {
       console.log('Error fetching profile:', error);
     } finally {
@@ -78,7 +83,24 @@ export default function ProfileTabScreen() {
     }
   };
 
+  const toggleChip = (v: string, list: string[], setList: (l: string[]) => void) => {
+    setList(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  };
+
   const handleSave = async () => {
+    // Same requirements as signup: all 4 personality answers, and at
+    // least 1 hobby. Enforce here too so people can't strip the matcher's
+    // main signals by editing their profile down to nothing.
+    const missingPersonality = PERSONALITY_QUESTIONS.some((_, i) => !personality[i] || !personality[i].trim());
+    if (missingPersonality) {
+      Alert.alert('Missing answers', 'Please answer all four personality questions.');
+      return;
+    }
+    if (hobbies.length === 0) {
+      Alert.alert('Missing hobbies', 'Please pick at least one hobby.');
+      return;
+    }
+
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -90,6 +112,8 @@ export default function ProfileTabScreen() {
         major,
         year_in_school: year,
         personality,
+        hobbies,
+        activities,
         updated_at: new Date().toISOString()
       })
       .eq('id', user.id);
@@ -310,10 +334,10 @@ export default function ProfileTabScreen() {
               <View key={q.key} style={styles.inputGroup}>
                 <Text style={styles.label}>{q.label}</Text>
                 <View style={styles.pickerContainer}>
-                  <Picker 
-                    selectedValue={personality[i] || ''} 
-                    onValueChange={(val) => setPersonalityAnswer(i, val)} 
-                    style={styles.picker} 
+                  <Picker
+                    selectedValue={personality[i] || ''}
+                    onValueChange={(val) => setPersonalityAnswer(i, val)}
+                    style={styles.picker}
                     itemStyle={styles.pickerItem}
                   >
                     <Picker.Item label="Select answer..." value="" />
@@ -322,6 +346,38 @@ export default function ProfileTabScreen() {
                 </View>
               </View>
             ))}
+
+            <Text style={[styles.label, { marginTop: 12, marginBottom: 12, fontSize: 18, color: '#fff' }]}>Interests</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Hobbies · pick a few</Text>
+              <View style={styles.chipRow}>
+                {HOBBIES.map((h) => (
+                  <TouchableOpacity
+                    key={h}
+                    style={[styles.chip, hobbies.includes(h) && styles.chipActiveHobby]}
+                    onPress={() => toggleChip(h, hobbies, setHobbies)}
+                  >
+                    <Text style={[styles.chipText, hobbies.includes(h) && { color: '#fff' }]}>{h}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Campus activities · optional</Text>
+              <View style={styles.chipRow}>
+                {ACTIVITIES.map((a) => (
+                  <TouchableOpacity
+                    key={a}
+                    style={[styles.chip, activities.includes(a) && styles.chipActiveActivity]}
+                    onPress={() => toggleChip(a, activities, setActivities)}
+                  >
+                    <Text style={[styles.chipText, activities.includes(a) && { color: '#fff' }]}>{a}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
             <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Changes</Text>}
@@ -352,7 +408,35 @@ export default function ProfileTabScreen() {
               </View>
             ))}
 
-            <TouchableOpacity style={styles.button} onPress={() => setIsEditing(true)}>
+            <View style={styles.divider} />
+            <Text style={styles.viewSectionTitle}>Hobbies</Text>
+            <View style={styles.chipRow}>
+              {(profile?.hobbies?.length ?? 0) === 0 ? (
+                <Text style={styles.viewValueMuted}>Not set — tap Edit Profile to add some.</Text>
+              ) : (
+                profile.hobbies.map((h: string) => (
+                  <View key={h} style={[styles.chip, styles.chipActiveHobby, { paddingVertical: 6 }]}>
+                    <Text style={[styles.chipText, { color: '#fff' }]}>{h}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <View style={styles.divider} />
+            <Text style={styles.viewSectionTitle}>Campus activities</Text>
+            <View style={styles.chipRow}>
+              {(profile?.activities?.length ?? 0) === 0 ? (
+                <Text style={styles.viewValueMuted}>None yet.</Text>
+              ) : (
+                profile.activities.map((a: string) => (
+                  <View key={a} style={[styles.chip, styles.chipActiveActivity, { paddingVertical: 6 }]}>
+                    <Text style={[styles.chipText, { color: '#fff' }]}>{a}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={() => setIsEditing(true)}>
               <Text style={styles.buttonText}>Edit Profile</Text>
             </TouchableOpacity>
           </View>
@@ -562,6 +646,15 @@ const styles = StyleSheet.create({
   viewLabel: { color: '#9ca3af', fontSize: 14 },
   viewValue: { color: '#fff', fontSize: 16, fontWeight: '500' },
   viewValueHigh: { color: '#d8b4fe', fontSize: 16, fontWeight: '600', marginTop: 4 },
+  viewValueMuted: { color: '#6b7280', fontSize: 13, fontStyle: 'italic' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  chip: {
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999,
+    backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151',
+  },
+  chipActiveHobby: { backgroundColor: '#9333ea', borderColor: '#9333ea' },
+  chipActiveActivity: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
+  chipText: { color: '#e5e7eb', fontSize: 13, fontWeight: '600' },
   divider: { height: 1, backgroundColor: '#374151', marginVertical: 16 },
   viewSectionTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
