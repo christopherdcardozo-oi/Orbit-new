@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -56,6 +56,9 @@ export default function ChatTabScreen() {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
   const [displayAlias, setDisplayAlias] = useState<string | null>(null);
+  // Stored so the "Invite a Friend" button can pre-fill the campus in
+  // the signup URL, matching the profile-screen version's behavior.
+  const [campusDomain, setCampusDomain] = useState<string | null>(null);
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [secondsLeft, setSecondsLeft] = useState(() => getSecondsUntilMidnight(DEFAULT_TIMEZONE));
   const [userId, setUserId] = useState<string | null>(null);
@@ -140,6 +143,30 @@ export default function ChatTabScreen() {
 
   // Three real tiers now — 'neutral' ("Meh") is an actual recorded
   // rating, not a dismiss-without-rating action like the old "Skip" was.
+  // Mirror of the profile-screen invite. Kept in sync with the
+  // handleInviteFriend implementation in apps/mobile/app/(app)/profile.tsx —
+  // if you change one, change the other. Shares web navigator.share
+  // when available, falls back to clipboard on desktop web, or mailto
+  // on native.
+  const handleInviteFriend = async () => {
+    const base = 'https://orbit.orghubs.com';
+    const url = campusDomain
+      ? `${base}/signup?campus=${encodeURIComponent(campusDomain)}`
+      : `${base}/signup`;
+    const text = `Try Orbit — anonymous campus-only match once a day, reset at midnight. ${url}`;
+    if (Platform.OS === 'web' && (navigator as any).share) {
+      try { await (navigator as any).share({ title: 'Orbit', text, url }); return; } catch { /* cancelled */ }
+    }
+    if (Platform.OS === 'web' && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        Alert.alert('Link copied', 'Share it with a friend from your campus.');
+        return;
+      } catch { /* fall through */ }
+    }
+    Linking.openURL(`mailto:?subject=Try Orbit&body=${encodeURIComponent(text)}`);
+  };
+
   const submitRating = async (matchId: string, rating: 'up' | 'neutral' | 'down') => {
     if (!userId) return;
     // Optimistic removal — the card leaves the screen as soon as they tap.
@@ -160,6 +187,7 @@ export default function ChatTabScreen() {
         .single();
 
       if (profile?.display_alias) setDisplayAlias(profile.display_alias);
+      if (profile?.email_domain) setCampusDomain(profile.email_domain);
 
       if (profile?.email_domain) {
         const { data: uni } = await supabase
@@ -397,6 +425,15 @@ export default function ChatTabScreen() {
           <Text style={styles.countdownLabel}>Next reset in</Text>
           <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
         </View>
+
+        {/* Invite a friend — front and center on the lobby since this
+            is where the "small pool, no match yet" feeling hits.
+            Duplicates the profile-screen button intentionally
+            (utility home + high-traffic surface). */}
+        <TouchableOpacity style={styles.lobbyInviteButton} onPress={handleInviteFriend}>
+          <Ionicons name="share-social" size={18} color="#c084fc" />
+          <Text style={styles.lobbyInviteButtonText}>Invite a Friend from Your Campus</Text>
+        </TouchableOpacity>
 
         {/* Post-match rating prompts — up to 2 unrated recent matches,
             each dismissed independently as you tap Cool/Meh/Pass. */}
@@ -662,8 +699,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(168, 85, 247, 0.3)',
     borderRadius: 16,
-    width: '100%',
+    // alignSelf:'stretch' is more predictable than width:'100%' inside a
+    // parent with alignItems:'center' — some RN-web versions center the
+    // width:'100%' child based on its content instead of stretching.
+    alignSelf: 'stretch',
   },
+  // Invite button on the lobby screen. Same visual language as the
+  // profile-screen version (styles.inviteButton in profile.tsx) — we
+  // keep both because the profile is the utility home and the lobby is
+  // where the "small pool, wish I had more friends here" feeling hits.
+  lobbyInviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginTop: 20,
+    alignSelf: 'stretch',
+  },
+  lobbyInviteButtonText: { color: '#c084fc', fontSize: 15, fontWeight: '700' },
   ratingQuestion: {
     color: '#e5e7eb',
     fontSize: 14,
