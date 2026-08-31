@@ -147,12 +147,15 @@ export default function ChatScreen() {
 
   const [timeLeftStr, setTimeLeftStr] = useState('')
   const [expired, setExpired] = useState(false)
-  // secondsLeft is only tracked (and re-rendered every second) once
-  // we're in the last 10 minutes — up until then the coarse timeLeftStr
-  // ("3 hours", "42 minutes") is enough and updates every 30s.
+  // secondsLeft is always tracked so the warning banner can decide
+  // whether it's in the "≤ 1 hour left" persistent-visible state.
+  // Interval frequency ramps: 30s outside the final 10 min, 1s inside
+  // (so the m:ss countdown updates every second).
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
-  // Static red urgency tint behind the chat.
-  const [flashOpacity, setFlashOpacity] = useState(0)
+  // (Old red-tint state removed — chat now uses the standard
+  // CosmicBackground so it matches the lobby and profile screens; the
+  // warning banner + 10-min pulsing countdown carry all the urgency
+  // signal now.)
   // Disintegrate-and-leave animation state, driven by the match status
   // realtime subscription flipping to 'expired' (or the countdown
   // hitting 0 locally, whichever comes first).
@@ -360,7 +363,6 @@ export default function ChatScreen() {
         setExpired(true)
         setSecondsLeft(0)
         setTimeLeftStr('expired')
-        setFlashOpacity(0.35)
         return
       }
 
@@ -368,14 +370,11 @@ export default function ChatScreen() {
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
       const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
 
-      // Inside the last 10 min: track live seconds so the banner can
-      // render m:ss. Outside: null, so the coarse label renders.
+      // Track live seconds always so the banner can decide whether
+      // we're inside the "≤ 1 hour" window (persistent visible) or the
+      // "≤ 10 min" window (m:ss + pulsing).
+      setSecondsLeft(totalSeconds)
       const nowInFinal = diffHours === 0 && diffMinutes < 10
-      if (nowInFinal) {
-        setSecondsLeft(totalSeconds)
-      } else {
-        setSecondsLeft(null)
-      }
 
       if (diffHours > 0) {
         setTimeLeftStr(`${diffHours} hour${diffHours === 1 ? '' : 's'}`)
@@ -383,15 +382,6 @@ export default function ChatScreen() {
         setTimeLeftStr(`${diffMinutes} minute${diffMinutes === 1 ? '' : 's'}`)
       } else {
         setTimeLeftStr('less than a minute')
-      }
-
-      // Same three urgency tiers as before for the background red tint.
-      if (diffHours === 0 && diffMinutes <= 10) {
-        setFlashOpacity(0.35)
-      } else if (diffHours === 0) {
-        setFlashOpacity(0.22)
-      } else {
-        setFlashOpacity(0.1)
       }
 
       // If crossing into the final window, swap the interval to 1s.
@@ -715,13 +705,6 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <CosmicBackground />
 
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: 'red', opacity: flashOpacity, pointerEvents: 'none' },
-        ]}
-      />
-
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
@@ -741,28 +724,47 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Expiry warning. In the last 10 min the banner switches to a
-          live m:ss countdown and starts pulsing (scale ramp driven by
-          bannerPulse). Everything else stays identical. */}
-      <Animated.View
-        style={[
-          styles.warningBanner,
-          secondsLeft !== null && secondsLeft > 0 && {
-            transform: [{ scale: bannerPulse }],
-            borderColor: 'rgba(239, 68, 68, 0.7)',
-            backgroundColor: 'rgba(239, 68, 68, 0.18)',
-          },
-        ]}
-      >
-        <Ionicons name="time-outline" size={20} color="#fca5a5" />
-        <Text style={styles.warningText}>
-          {isActive
-            ? secondsLeft !== null && secondsLeft > 0
-              ? `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')} until gone forever.`
-              : `Remember: You only have ${timeLeftStr} until this person is gone forever.`
-            : 'This connection has expired. They vanished into the cosmos.'}
-        </Text>
-      </Animated.View>
+      {/* Expiry warning. Behavior:
+            - Shown while there are no messages yet (helps set expectations)
+            - Auto-hides once any message has been sent (either party)
+            - Reappears persistently once secondsLeft ≤ 3600 (one hour)
+            - Inside the last 10 min: pulses + switches to a live m:ss
+              countdown (bannerPulse drives the scale ramp)
+            - Once expired: swaps to the "vanished" message and stays. */}
+      {(() => {
+        if (!isActive) {
+          return (
+            <View style={styles.warningBanner}>
+              <Ionicons name="time-outline" size={20} color="#fca5a5" />
+              <Text style={styles.warningText}>This connection has expired. They vanished into the cosmos.</Text>
+            </View>
+          )
+        }
+        const withinHour = secondsLeft !== null && secondsLeft <= 3600
+        const withinTenMin = secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 600
+        const hasMessages = messages.length > 0
+        // Show if: no messages yet OR we're inside the last hour.
+        if (hasMessages && !withinHour) return null
+        return (
+          <Animated.View
+            style={[
+              styles.warningBanner,
+              withinTenMin && {
+                transform: [{ scale: bannerPulse }],
+                borderColor: 'rgba(239, 68, 68, 0.7)',
+                backgroundColor: 'rgba(239, 68, 68, 0.18)',
+              },
+            ]}
+          >
+            <Ionicons name="time-outline" size={20} color="#fca5a5" />
+            <Text style={styles.warningText}>
+              {withinTenMin
+                ? `${Math.floor(secondsLeft! / 60)}:${String(secondsLeft! % 60).padStart(2, '0')} until gone forever.`
+                : `Remember: You only have ${timeLeftStr} until this person is gone forever.`}
+            </Text>
+          </Animated.View>
+        )
+      })()}
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}

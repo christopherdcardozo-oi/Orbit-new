@@ -25,7 +25,12 @@ const FEEDBACK_CATEGORIES: { value: string; label: string }[] = [
   { value: 'account-help', label: 'Account help' },
   { value: 'other', label: 'Other' },
 ];
-const AVATARS = ['alien', 'alien-outline', 'rocket-launch', 'ufo', 'ufo-outline', 'planet', 'moon-waning-crescent', 'meteor', 'star-shooting', 'earth', 'satellite-variant'];
+// Trimmed to icons known-good across current @expo/vector-icons builds.
+// Removed the outline variants and the two suspect names that rendered
+// as `?` in some builds (ufo-outline, star-shooting). Any DB rows
+// still holding removed avatars are reset to a random one from this
+// list by migration 029.
+const AVATARS = ['alien', 'rocket-launch', 'ufo', 'planet', 'moon-waning-crescent', 'earth', 'satellite-variant', 'meteor'];
 
 // Sourced from lib/personality.ts so signup and this screen never drift.
 const QUESTIONS = PERSONALITY_QUESTIONS;
@@ -311,8 +316,8 @@ export default function ProfileTabScreen() {
         <CosmicBackground />
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 60, paddingHorizontal: 16 }}>
           <View style={styles.header}>
-            <Skeleton width={112} height={112} radius={56} style={{ marginBottom: 12 }} />
-            <Skeleton width={180} height={26} radius={6} style={{ marginBottom: 8 }} />
+            <Skeleton width={100} height={100} radius={50} style={{ marginBottom: 12 }} />
+            <Skeleton width={160} height={22} radius={6} style={{ marginBottom: 8 }} />
             <Skeleton width={100} height={14} radius={4} />
           </View>
           <View style={styles.card}>
@@ -335,8 +340,8 @@ export default function ProfileTabScreen() {
         
         {/* Header Section */}
         <View style={styles.header}>
-          <View style={styles.avatar}>
-            <MaterialCommunityIcons name={avatar as any} size={80} color="#c084fc" />
+          <View style={styles.avatarRing}>
+            <MaterialCommunityIcons name={avatar as any} size={56} color="#c084fc" />
           </View>
           <Text style={styles.title}>{profile?.display_alias || 'Astronaut'}</Text>
           <Text style={styles.subtitle}>{profile?.gender || 'Unknown Identity'}</Text>
@@ -506,15 +511,11 @@ export default function ProfileTabScreen() {
 
         <TouchableOpacity style={styles.inviteButton} onPress={handleInviteFriend}>
           <Ionicons name="share-social" size={18} color="#c084fc" />
-          <Text style={styles.inviteButtonText}>Invite a Friend from Your Campus</Text>
+          <Text style={styles.inviteButtonText}>Invite a Campus Bud</Text>
         </TouchableOpacity>
-
-        {/* Opens Stripe's own donate page in the browser — no payment
-            details are ever seen or handled by the app itself. */}
-        <TouchableOpacity style={styles.tipButton} onPress={handleTipDev}>
-          <Ionicons name="heart" size={18} color="#f472b6" />
-          <Text style={styles.tipButtonText}>Tip the Dev</Text>
-        </TouchableOpacity>
+        {/* "Tip the Dev" moved into the Settings modal — sat next to
+            the invite button here before but competed with it for
+            attention on the primary screen. */}
       </ScrollView>
 
       {/* Settings Modal */}
@@ -565,6 +566,14 @@ export default function ProfileTabScreen() {
             >
               <Ionicons name="chatbubble-ellipses-outline" size={24} color="#fff" />
               <Text style={styles.modalButtonText}>Send Feedback</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => { setShowSettings(false); handleTipDev(); }}
+            >
+              <Ionicons name="heart-outline" size={24} color="#f472b6" />
+              <Text style={[styles.modalButtonText, { color: '#f472b6' }]}>Tip the Dev</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -673,8 +682,27 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { alignItems: 'center', marginBottom: 32, position: 'relative' },
   settingsIcon: { position: 'absolute', top: 0, right: 10, padding: 8 },
-  avatar: { marginBottom: 8, shadowColor: '#a855f7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 15, elevation: 10 },
-  title: { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 4 },
+  // Circle ring wrapper matching the lobby's matched-card avatar
+  // (styles.matchedAvatarRing in index.tsx) so the visual identity
+  // is consistent across every screen the alias/avatar appears on.
+  avatarRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 2,
+    borderColor: '#a855f7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#a855f7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  // Title (alias) sized to match the chat mini-profile modal (20).
+  title: { fontSize: 20, fontWeight: '700', color: '#fff', marginBottom: 4 },
   subtitle: { fontSize: 16, color: '#9ca3af', textTransform: 'capitalize' },
   card: { backgroundColor: 'rgba(17, 24, 39, 0.6)', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#1f2937', marginBottom: 24 },
   tipButton: {

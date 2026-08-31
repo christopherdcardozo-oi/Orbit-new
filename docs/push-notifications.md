@@ -113,15 +113,34 @@ that type.
 - **Body:** `You and {alias} both shared your {type}. Tap to see it.`
 - **Deep link:** `/chat/{matchId}`
 
+### 4. Match expires in 1 hour
+
+**When:** 1 hour before this match's `expires_at`. One push to each user
+in the match.
+
+**Suppress:** none. (The 10-min in-app countdown fires the pulsing
+banner, but that's in-app; a 1hr-out push is the app's chance to pull
+someone back who's been off the app all day.)
+
+- **Title:** `1 hour left with {alias} ⏳`
+- **Body:** `They vanish at midnight. Come say goodbye — or say what you were going to say.`
+- **Deep link:** `/chat/{matchId}`
+
+**Delivery mechanism:** pg_cron every minute checking `matches` where
+`status='active'` and `expires_at BETWEEN now() + interval '59m 30s' AND
+now() + interval '60m 30s'` and `one_hr_notified_at IS NULL`. Marks
+`matches.one_hr_notified_at = now()` after firing so a slow tick or
+retry doesn't double-fire.
+
 ### Not shipping (yet)
 
 Explicitly considered and rejected for V1:
 
-- **10-min expiry warning** — the app already shows a live pulsing
-  countdown in-chat once you cross the 10-min threshold. A push at the
-  same moment risks pinging people around ~11:50pm every single night
-  about matches they'd forgotten. Revisit later if we see people
-  regretting matches expiring un-replied-to.
+- **10-min expiry warning push** — the app already shows a live
+  pulsing countdown in-chat once you cross the 10-min threshold, and
+  the 1-hour push (above) is the wake-up-someone-who-forgot signal.
+  A second push 50 minutes later risks a lot of "match I forgot about
+  is buzzing me twice in an hour" annoyance.
 - **Read receipts** ("{alias} read your messages") — noisy, adds nothing.
 - **Match expired** ("{alias} vanished into the cosmos") — the app
   navigates you home with the disintegrate animation; a push at the same

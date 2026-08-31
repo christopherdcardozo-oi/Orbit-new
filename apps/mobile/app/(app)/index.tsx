@@ -401,7 +401,7 @@ export default function ChatTabScreen() {
           onPress={handleInviteFriend}
         >
           <Ionicons name="share-social" size={18} color="#c084fc" />
-          <Text style={styles.lobbyInviteButtonText}>Invite a Friend from Your Campus</Text>
+          <Text style={styles.lobbyInviteButtonText}>Invite a Campus Bud</Text>
         </TouchableOpacity>
 
         {/* Also render post-match rating prompts here, so a user with a
@@ -468,7 +468,7 @@ export default function ChatTabScreen() {
             (utility home + high-traffic surface). */}
         <TouchableOpacity style={styles.lobbyInviteButton} onPress={handleInviteFriend}>
           <Ionicons name="share-social" size={18} color="#c084fc" />
-          <Text style={styles.lobbyInviteButtonText}>Invite a Friend from Your Campus</Text>
+          <Text style={styles.lobbyInviteButtonText}>Invite a Campus Bud</Text>
         </TouchableOpacity>
 
         {/* Post-match rating prompts — up to 2 unrated recent matches,
@@ -622,8 +622,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   matchedAlias: {
-    fontSize: 28,
-    fontWeight: '900',
+    // Sized to match the chat mini-profile modal (20). Previously 28
+    // and read as shouting on the small lobby card.
+    fontSize: 20,
+    fontWeight: '700',
     color: '#fff',
     textAlign: 'center',
     marginBottom: 20,
