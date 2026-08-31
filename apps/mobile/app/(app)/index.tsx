@@ -59,11 +59,12 @@ export default function ChatTabScreen() {
   // Stored so the "Invite a Friend" button can pre-fill the campus in
   // the signup URL, matching the profile-screen version's behavior.
   const [campusDomain, setCampusDomain] = useState<string | null>(null);
-  // First-time safety disclaimer state. safety_ack_at column stays
-  // null until the user taps "I understand" on the modal we show
-  // before their very first Start Chatting. See docs/safety-disclaimer
-  // rationale in the profile schema (migration 031).
-  const [safetyAckAt, setSafetyAckAt] = useState<string | null>(null);
+  // Per-match safety disclaimer state (migration 032). Every new match
+  // is a new stranger, so the disclaimer re-appears once per match —
+  // not once per lifetime. safetyAckedMatchIds tracks acks fetched
+  // from match_safety_acks so Start Chatting can skip the modal for
+  // matches the user has already acknowledged.
+  const [safetyAckedMatchIds, setSafetyAckedMatchIds] = useState<Set<string>>(new Set());
   const [safetyModalOpen, setSafetyModalOpen] = useState(false);
   const [safetyAcking, setSafetyAcking] = useState(false);
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
@@ -162,18 +163,20 @@ export default function ChatTabScreen() {
   const acceptSafetyDisclaimer = async () => {
     if (!userId || !activeMatch) return;
     setSafetyAcking(true);
-    const nowIso = new Date().toISOString();
+    const matchId = activeMatch.id;
     const { error } = await supabase
-      .from('profiles')
-      .update({ safety_ack_at: nowIso })
-      .eq('id', userId);
+      .from('match_safety_acks')
+      .insert({ match_id: matchId, user_id: userId });
     setSafetyAcking(false);
-    if (error) { console.warn('safety_ack update failed:', error); }
-    // Whether or not the update succeeded, don't block the user — worst
-    // case they see the modal again on the next Start Chatting tap.
-    setSafetyAckAt(nowIso);
+    // Duplicate-insert (code 23505) means they already acked from
+    // another device — treat as success. Other errors we just log
+    // and let the user proceed; worst case they see the modal again.
+    if (error && error.code !== '23505') {
+      console.warn('match_safety_ack insert failed:', error);
+    }
+    setSafetyAckedMatchIds((prev) => new Set(prev).add(matchId));
     setSafetyModalOpen(false);
-    router.push(`/chat/${activeMatch.id}`);
+    router.push(`/chat/${matchId}`);
   };
 
   const handleInviteFriend = async () => {
@@ -251,13 +254,20 @@ export default function ChatTabScreen() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('display_alias, email_domain, safety_ack_at')
+        .select('display_alias, email_domain')
         .eq('id', user.id)
         .single();
 
       if (profile?.display_alias) setDisplayAlias(profile.display_alias);
       if (profile?.email_domain) setCampusDomain(profile.email_domain);
-      setSafetyAckAt(profile?.safety_ack_at ?? null);
+
+      // Load the user's existing per-match safety acks so Start
+      // Chatting can skip the modal for matches already acknowledged.
+      const { data: acks } = await supabase
+        .from('match_safety_acks')
+        .select('match_id')
+        .eq('user_id', user.id);
+      if (acks) setSafetyAckedMatchIds(new Set(acks.map((a) => a.match_id)));
 
       if (profile?.email_domain) {
         const { data: uni } = await supabase
@@ -407,10 +417,14 @@ export default function ChatTabScreen() {
           <TouchableOpacity
             style={styles.chatButton}
             onPress={() => {
-              // First time only: pop the safety disclaimer. On accept
-              // we mark the profile and navigate. Every subsequent
-              // Start Chatting tap goes straight through.
-              if (!safetyAckAt) { setSafetyModalOpen(true); return; }
+              // Per-match check: if this specific match hasn't been
+              // acknowledged yet, pop the safety disclaimer. Every
+              // new match re-shows it once — every match is a new
+              // stranger.
+              if (!safetyAckedMatchIds.has(activeMatch.id)) {
+                setSafetyModalOpen(true);
+                return;
+              }
               router.push(`/chat/${activeMatch.id}`);
             }}
           >

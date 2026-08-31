@@ -139,9 +139,12 @@ function detectPii(text: string): PiiHit[] {
   const socialMatch = text.match(/(?:^|\s)@[a-zA-Z0-9._]{3,30}\b/) ||
                       text.match(/\b(instagram|insta|snapchat|snap|whatsapp|telegram|discord|tiktok)\b\s*[:\-@]?\s*[a-zA-Z0-9._]{2,}/i)
   if (socialMatch) hits.push({ kind: 'social', match: socialMatch[0].trim() })
-  // Address pattern: number + word + street type. Not perfect but
-  // catches most "1234 Elm Street"-style shares.
-  const addressMatch = text.match(/\b\d{1,5}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Circle|Cir)\b/)
+  // Address pattern: number + word(s) + street type. Case-insensitive
+  // so "4912 mortesan drive" (no capitalization) still gets flagged.
+  // Requires at least one word between the number and the street
+  // type to avoid catching things like "$4912 Drive" (still an edge
+  // case but tighter than "any digits + drive").
+  const addressMatch = text.match(/\b\d{1,5}\s+[a-z]+(?:\s+[a-z]+)?\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|circle|cir)\b/i)
   if (addressMatch) hits.push({ kind: 'address', match: addressMatch[0] })
   return hits
 }
