@@ -23,14 +23,23 @@ export default function Root({ children }: { children: React.ReactNode }) {
             actually shrink the layout viewport when the on-screen keyboard
             opens, instead of leaving the page at its pre-keyboard height —
             which is what caused the blank white gap below the form.
-            maximum-scale=1 + user-scalable=no locks pinch-zoom: without it,
-            zooming out reveals the raw edges of the fixed-width "phone
-            frame" container (blank space either side) since this is meant
-            to feel like an app, not a zoomable web page. */}
+            maximum-scale=1 + minimum-scale=1 + user-scalable=no locks the
+            zoom level in both directions: without minimum-scale specifically,
+            Safari can still auto-zoom OUT on its own (not a user pinch) if
+            any element ever briefly overflows the viewport width — e.g.
+            during a route transition — and it does not zoom back in once
+            that overflow is gone. That's what caused the "zoomed out with
+            blank margins" state on every navigation, not just the
+            keyboard-focus case. */}
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content"
+          content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content"
         />
+
+        {/* Belt-and-suspenders for the same bug: if anything still manages
+            to overflow horizontally for a frame, clipping it here means
+            there's nothing for Safari's auto-fit zoom to react to. */}
+        <style>{`html, body, #root { overflow-x: hidden; max-width: 100vw; }`}</style>
 
         {/* Disable body scrolling on web so ScrollView behaves like native. */}
         <ScrollViewStyleReset />
