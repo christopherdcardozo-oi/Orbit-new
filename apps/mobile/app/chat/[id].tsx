@@ -114,6 +114,44 @@ const HANDLE_TYPES: {
 
 const handleMeta = (t: HandleType) => HANDLE_TYPES.find((x) => x.value === t) || HANDLE_TYPES[HANDLE_TYPES.length - 1]
 
+// Conservative regex heuristics that flag common PII patterns in a
+// message before sending. Deliberately narrow to keep false positives
+// low — worse to nag on innocent messages than to miss the occasional
+// creative-format handle. If any of these hits, we warn and point
+// them at the Share Contact button; user can still send anyway.
+type PiiHit = { kind: 'phone' | 'email' | 'social' | 'address'; match: string }
+function detectPii(text: string): PiiHit[] {
+  const hits: PiiHit[] = []
+  // Phone: 10+ digits, allowing +, spaces, dashes, parens between them.
+  // Requires at least 10 digits total to avoid catching prices or short
+  // numeric snippets.
+  const phoneMatch = text.match(/(?:\+?\d[\s\-().]{0,2}){10,}/)
+  if (phoneMatch) {
+    const digits = phoneMatch[0].replace(/\D/g, '')
+    if (digits.length >= 10) hits.push({ kind: 'phone', match: phoneMatch[0].trim() })
+  }
+  // Email — very high signal, minimal false-positive risk.
+  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]{2,}/)
+  if (emailMatch) hits.push({ kind: 'email', match: emailMatch[0] })
+  // Social handle mentions: @handle or explicit platform keyword +
+  // possible handle. Skip if the message is just an emoji reaction
+  // that happens to start with @ etc.
+  const socialMatch = text.match(/(?:^|\s)@[a-zA-Z0-9._]{3,30}\b/) ||
+                      text.match(/\b(instagram|insta|snapchat|snap|whatsapp|telegram|discord|tiktok)\b\s*[:\-@]?\s*[a-zA-Z0-9._]{2,}/i)
+  if (socialMatch) hits.push({ kind: 'social', match: socialMatch[0].trim() })
+  // Address pattern: number + word + street type. Not perfect but
+  // catches most "1234 Elm Street"-style shares.
+  const addressMatch = text.match(/\b\d{1,5}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Circle|Cir)\b/)
+  if (addressMatch) hits.push({ kind: 'address', match: addressMatch[0] })
+  return hits
+}
+const PII_LABELS: Record<PiiHit['kind'], string> = {
+  phone: 'a phone number',
+  email: 'an email',
+  social: 'a social handle',
+  address: 'an address',
+}
+
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
@@ -182,6 +220,11 @@ export default function ChatScreen() {
   // when opened; all this data is already loaded with the match.
   const [profileModalOpen, setProfileModalOpen] = useState(false)
 
+  // PII warning: shown when the pending outgoing message looks like
+  // it contains contact info shared outside the Share Contact flow.
+  // The user can still send anyway — this is a nudge, not a filter.
+  const [piiWarning, setPiiWarning] = useState<{ hits: PiiHit[]; message: string } | null>(null)
+
   // Contact reveals — arrays now, since users can share multiple types
   // (Instagram + Snap + email) and each type is independently
   // reciprocated with the partner.
@@ -230,7 +273,7 @@ export default function ChatScreen() {
         expires_at: matchRow.expires_at,
         partnerId,
         partnerAlias: partner?.display_alias ?? 'Mystery Connection',
-        partnerAvatar: partner?.avatar ?? 'planet',
+        partnerAvatar: partner?.avatar ?? 'alien',
         partnerMajor: partner?.major ?? null,
         partnerYear: partner?.year_in_school ?? null,
         partnerPersonality: partner?.personality ?? null,
@@ -635,32 +678,38 @@ export default function ChatScreen() {
     handleBack()
   }
 
-  const handleSend = useCallback(async () => {
-    const content = inputText.trim()
-    if (!content || !userId || !id || sending || !isActive) return
-
+  // Actual insert-and-append. Called by handleSend when the message
+  // looks clean, or by the PII warning's "Send anyway" path.
+  const doSend = useCallback(async (content: string) => {
+    if (!content || !userId || !id || !isActive) return
     setSending(true)
     setInputText('')
-
+    setPiiWarning(null)
     const { data: inserted, error } = await supabase
       .from('messages')
       .insert({ match_id: id, sender_id: userId, content })
       .select('id, match_id, sender_id, content, created_at, read_at')
       .single()
-
     if (error) {
       console.warn('Failed to send message:', error)
       setInputText(content) // give it back so they don't lose what they typed
     } else if (inserted) {
-      // Append directly rather than waiting for the realtime echo — snappier,
-      // and the realtime handler's seenMessageIds guard skips the duplicate
-      // when its own echo of this insert arrives a moment later.
       seenMessageIds.current.add(inserted.id)
       setMessages((prev) => [...prev, inserted])
     }
-
     setSending(false)
-  }, [inputText, userId, id, sending, isActive])
+  }, [userId, id, isActive])
+
+  const handleSend = useCallback(() => {
+    const content = inputText.trim()
+    if (!content || sending || !isActive) return
+    const hits = detectPii(content)
+    if (hits.length > 0) {
+      setPiiWarning({ hits, message: content })
+      return
+    }
+    doSend(content)
+  }, [inputText, sending, isActive, doSend])
 
   // ---------- Render ----------
 
@@ -1237,6 +1286,43 @@ export default function ChatScreen() {
             <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setProfileModalOpen(false)}>
               <Text style={styles.sheetCancelText}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* PII send-warning. Nudge only — the user can send anyway. */}
+      <Modal
+        visible={piiWarning !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPiiWarning(null)}
+      >
+        <View style={styles.menuBackdrop}>
+          <View style={[styles.menuSheet, { padding: 20 }]}>
+            <Ionicons name="warning-outline" size={28} color="#fbbf24" style={{ alignSelf: 'center', marginBottom: 8 }} />
+            <Text style={styles.sheetTitle}>Heads up</Text>
+            <Text style={styles.sheetSubtitle}>
+              It looks like your message includes{' '}
+              {piiWarning?.hits.map((h, i) => (
+                <Text key={i}>
+                  {i > 0 ? ' and ' : ''}
+                  <Text style={{ color: '#fbbf24', fontWeight: '700' }}>{PII_LABELS[h.kind]}</Text>
+                </Text>
+              ))}
+              .{'\n\n'}
+              For your safety, tap <Text style={{ fontWeight: '700' }}>Share Contact</Text> at the top of the chat — it only reveals what you share once your match shares the same type too.
+            </Text>
+            <View style={styles.sheetActions}>
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setPiiWarning(null)}>
+                <Text style={styles.sheetCancelText}>Let me edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetPrimaryBtn, { backgroundColor: '#f59e0b' }]}
+                onPress={() => piiWarning && doSend(piiWarning.message)}
+              >
+                <Text style={styles.sheetPrimaryText}>Send anyway</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

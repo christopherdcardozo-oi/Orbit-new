@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Alert, Modal } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -59,6 +59,13 @@ export default function ChatTabScreen() {
   // Stored so the "Invite a Friend" button can pre-fill the campus in
   // the signup URL, matching the profile-screen version's behavior.
   const [campusDomain, setCampusDomain] = useState<string | null>(null);
+  // First-time safety disclaimer state. safety_ack_at column stays
+  // null until the user taps "I understand" on the modal we show
+  // before their very first Start Chatting. See docs/safety-disclaimer
+  // rationale in the profile schema (migration 031).
+  const [safetyAckAt, setSafetyAckAt] = useState<string | null>(null);
+  const [safetyModalOpen, setSafetyModalOpen] = useState(false);
+  const [safetyAcking, setSafetyAcking] = useState(false);
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [secondsLeft, setSecondsLeft] = useState(() => getSecondsUntilMidnight(DEFAULT_TIMEZONE));
   const [userId, setUserId] = useState<string | null>(null);
@@ -100,7 +107,7 @@ export default function ChatTabScreen() {
       id: match.id,
       icebreaker: match.icebreaker,
       partnerAlias: partner?.display_alias ?? 'Mystery Connection',
-      partnerAvatar: partner?.avatar ?? 'planet',
+      partnerAvatar: partner?.avatar ?? 'alien',
     });
     setLoadingMatch(false);
   }, []);
@@ -152,6 +159,23 @@ export default function ChatTabScreen() {
   // if you change one, change the other. Shares web navigator.share
   // when available, falls back to clipboard on desktop web, or mailto
   // on native.
+  const acceptSafetyDisclaimer = async () => {
+    if (!userId || !activeMatch) return;
+    setSafetyAcking(true);
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
+      .from('profiles')
+      .update({ safety_ack_at: nowIso })
+      .eq('id', userId);
+    setSafetyAcking(false);
+    if (error) { console.warn('safety_ack update failed:', error); }
+    // Whether or not the update succeeded, don't block the user — worst
+    // case they see the modal again on the next Start Chatting tap.
+    setSafetyAckAt(nowIso);
+    setSafetyModalOpen(false);
+    router.push(`/chat/${activeMatch.id}`);
+  };
+
   const handleInviteFriend = async () => {
     const base = 'https://orbit.orghubs.com';
     const url = campusDomain
@@ -227,12 +251,13 @@ export default function ChatTabScreen() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('display_alias, email_domain')
+        .select('display_alias, email_domain, safety_ack_at')
         .eq('id', user.id)
         .single();
 
       if (profile?.display_alias) setDisplayAlias(profile.display_alias);
       if (profile?.email_domain) setCampusDomain(profile.email_domain);
+      setSafetyAckAt(profile?.safety_ack_at ?? null);
 
       if (profile?.email_domain) {
         const { data: uni } = await supabase
@@ -381,7 +406,13 @@ export default function ChatTabScreen() {
 
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={() => router.push(`/chat/${activeMatch.id}`)}
+            onPress={() => {
+              // First time only: pop the safety disclaimer. On accept
+              // we mark the profile and navigate. Every subsequent
+              // Start Chatting tap goes straight through.
+              if (!safetyAckAt) { setSafetyModalOpen(true); return; }
+              router.push(`/chat/${activeMatch.id}`);
+            }}
           >
             <Ionicons name="chatbubbles" size={20} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.chatButtonText}>Start Chatting</Text>
@@ -409,6 +440,42 @@ export default function ChatTabScreen() {
             expired one. */}
         {rateableMatches.map((m) => renderRatingCard(m, { marginTop: 20, marginHorizontal: 20 }))}
         </ScrollView>
+
+        {/* Safety disclaimer — shown once, on the user's very first
+            Start Chatting tap. Non-dismissible via backdrop tap so
+            they have to actively acknowledge. */}
+        <Modal visible={safetyModalOpen} transparent animationType="fade" onRequestClose={() => { /* no dismiss via back */ }}>
+          <View style={styles.safetyBackdrop}>
+            <View style={styles.safetySheet}>
+              <Ionicons name="shield-checkmark" size={32} color="#c084fc" style={{ alignSelf: 'center', marginBottom: 8 }} />
+              <Text style={styles.safetyTitle}>Before you say hi</Text>
+              <Text style={styles.safetyBody}>
+                Orbit connects you with strangers on your campus, but they're
+                still strangers. Chat freely — but for your safety:
+              </Text>
+              <View style={styles.safetyBullets}>
+                <Text style={styles.safetyBullet}>• Don't share your address, class schedule, or where you'll be at a specific time.</Text>
+                <Text style={styles.safetyBullet}>• Use the <Text style={{ fontWeight: '700' }}>Share Contact</Text> button when you both want to swap Instagram/Snap/phone/email — it only reveals your info once they share theirs too.</Text>
+                <Text style={styles.safetyBullet}>• If something feels off, use <Text style={{ fontWeight: '700' }}>Report and Block</Text> in the chat menu. We review every report.</Text>
+                <Text style={styles.safetyBullet}>• You alone decide whether to meet in person. Meet somewhere public if you do.</Text>
+              </View>
+              <Text style={styles.safetyLegal}>
+                By continuing, you agree that Orbit is not responsible for anything shared or arranged with your match.
+              </Text>
+              <TouchableOpacity
+                style={[styles.safetyBtn, safetyAcking && { opacity: 0.6 }]}
+                onPress={acceptSafetyDisclaimer}
+                disabled={safetyAcking}
+              >
+                {safetyAcking ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.safetyBtnText}>I understand — start chatting</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -761,6 +828,62 @@ const styles = StyleSheet.create({
   },
   ratingBtnText: { fontSize: 14, fontWeight: '600' },
   ratingBtnEmoji: { fontSize: 20, lineHeight: 22 },
+
+  // Safety disclaimer modal
+  safetyBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  safetySheet: {
+    width: '100%',
+    maxWidth: 480,
+    backgroundColor: '#0f172a',
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.35)',
+  },
+  safetyTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  safetyBody: {
+    color: '#d1d5db',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  safetyBullets: { marginBottom: 12 },
+  safetyBullet: {
+    color: '#e5e7eb',
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  safetyLegal: {
+    color: '#9ca3af',
+    fontSize: 11,
+    fontStyle: 'italic',
+    lineHeight: 16,
+    marginBottom: 16,
+  },
+  safetyBtn: {
+    backgroundColor: '#9333ea',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  safetyBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   ratingThanks: {
     color: '#c084fc',
     fontSize: 15,

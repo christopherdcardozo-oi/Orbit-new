@@ -49,7 +49,7 @@ export default function SignupScreen() {
   // What we reveal at the end — generated server-side by the
   // handle_new_user() trigger (see supabase/migrations/011_*).
   const [revealAlias, setRevealAlias] = useState('')
-  const [revealAvatar, setRevealAvatar] = useState('planet')
+  const [revealAvatar, setRevealAvatar] = useState('alien')
 
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<Step>('details')
@@ -220,7 +220,7 @@ export default function SignupScreen() {
 
     if (profile) {
       setRevealAlias(profile.display_alias)
-      setRevealAvatar(profile.avatar || 'planet')
+      setRevealAvatar(profile.avatar || 'alien')
     }
 
     setLoading(false)

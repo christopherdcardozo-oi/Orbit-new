@@ -30,7 +30,7 @@ const FEEDBACK_CATEGORIES: { value: string; label: string }[] = [
 // as `?` in some builds (ufo-outline, star-shooting). Any DB rows
 // still holding removed avatars are reset to a random one from this
 // list by migration 029.
-const AVATARS = ['alien', 'rocket-launch', 'ufo', 'planet', 'moon-waning-crescent', 'earth', 'satellite-variant', 'meteor'];
+const AVATARS = ['alien', 'rocket-launch', 'ufo', 'moon-waning-crescent', 'earth', 'satellite-variant', 'meteor'];
 
 // Sourced from lib/personality.ts so signup and this screen never drift.
 const QUESTIONS = PERSONALITY_QUESTIONS;
@@ -52,7 +52,7 @@ export default function ProfileTabScreen() {
   const [feedbackStatus, setFeedbackStatus] = useState<null | { kind: 'ok' | 'err'; text: string }>(null);
 
   // Form State
-  const [avatar, setAvatar] = useState('planet');
+  const [avatar, setAvatar] = useState('alien');
   const [major, setMajor] = useState('');
   const [year, setYear] = useState('');
   const [personality, setPersonality] = useState<string[]>([]);
@@ -121,7 +121,7 @@ export default function ProfileTabScreen() {
       if (error) throw error;
 
       setProfile(data);
-      setAvatar(data.avatar || 'planet');
+      setAvatar(data.avatar || 'alien');
       setMajor(data.major || '');
       setYear(data.year_in_school || '');
       setPersonality(data.personality || []);
