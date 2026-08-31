@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
@@ -79,6 +79,11 @@ export default function ProfileTabScreen() {
       setIsEditing(false);
       fetchProfile();
     }
+  };
+
+  const TIP_URL = 'https://donate.stripe.com/00w5kwe1b2vp6TTbQa0oM01';
+  const handleTipDev = () => {
+    Linking.openURL(TIP_URL);
   };
 
   const handleSignOut = async () => {
@@ -255,6 +260,13 @@ export default function ProfileTabScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Opens Stripe's own donate page in the browser — no payment
+            details are ever seen or handled by the app itself. */}
+        <TouchableOpacity style={styles.tipButton} onPress={handleTipDev}>
+          <Ionicons name="heart" size={18} color="#f472b6" />
+          <Text style={styles.tipButtonText}>Tip the Dev</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Settings Modal */}
@@ -291,7 +303,20 @@ const styles = StyleSheet.create({
   avatar: { marginBottom: 8, shadowColor: '#a855f7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 15, elevation: 10 },
   title: { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 4 },
   subtitle: { fontSize: 16, color: '#9ca3af', textTransform: 'capitalize' },
-  card: { backgroundColor: 'rgba(17, 24, 39, 0.6)', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#1f2937', marginBottom: 60 },
+  card: { backgroundColor: 'rgba(17, 24, 39, 0.6)', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#1f2937', marginBottom: 24 },
+  tipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(244, 114, 182, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 114, 182, 0.3)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginBottom: 60,
+  },
+  tipButtonText: { color: '#f472b6', fontSize: 15, fontWeight: '700' },
   inputGroup: { marginBottom: 20 },
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },
