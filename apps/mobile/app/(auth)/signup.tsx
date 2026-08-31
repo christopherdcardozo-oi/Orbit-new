@@ -165,6 +165,16 @@ export default function SignupScreen() {
 
   const handleSavePersonality = async () => {
     setErrorMessage('')
+    // All four personality answers are required — they're the strongest
+    // matching signal (weighted +3 each in compatibilityScore) and every
+    // icebreaker template leans on them. Letting people skip breaks the
+    // matcher's most important input.
+    const missing = PERSONALITY_QUESTIONS.some((_, i) => !personality[i] || !personality[i].trim())
+    if (missing) {
+      setErrorMessage('Please answer all four questions before continuing.')
+      return
+    }
+
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
