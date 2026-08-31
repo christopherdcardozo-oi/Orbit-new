@@ -72,10 +72,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: 120,
-    height: 120,
-    marginBottom: -4,
-    borderRadius: 24,
+    width: 160,
+    height: 160,
+    marginBottom: -12,
   },
   title: {
     fontSize: 48,

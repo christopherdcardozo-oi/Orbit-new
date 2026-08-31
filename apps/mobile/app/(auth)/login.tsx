@@ -265,11 +265,10 @@ const styles = StyleSheet.create({
     borderColor: '#1f2937',
   },
   logo: {
-    width: 96,
-    height: 96,
+    width: 120,
+    height: 120,
     alignSelf: 'center',
-    marginBottom: 16,
-    borderRadius: 20,
+    marginBottom: 4,
   },
   title: {
     fontSize: 28,
