@@ -566,47 +566,49 @@ export default function ProfileTabScreen() {
                 glance, easy to skim past; a toggle in the "off"
                 position reads as unfinished setup immediately. */}
             {Platform.OS === 'web' && (
-              <View style={[styles.modalButton, styles.notifRow]}>
-                <Ionicons name="notifications-outline" size={24} color="#fff" style={styles.notifIcon} />
-                <View style={styles.notifLabelCol}>
-                  <Text style={[styles.modalButtonText, styles.notifLabelText]}>Notifications</Text>
-                  {!isStandalone && pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
-                    <Text style={styles.notifHint}>
-                      Add Orbit to your Home Screen first — that's required to get notifications.
-                    </Text>
-                  )}
-                  {pushPermission === 'denied' && (
-                    <Text style={styles.notifHint}>
-                      {isStandalone
-                        ? 'Blocked — open your phone\'s Settings app → Notifications → Orbit, and turn Allow Notifications on.'
-                        : 'Blocked — tap the site info/lock icon next to the address bar, then allow notifications for this site.'}
-                    </Text>
-                  )}
-                  {pushPermission === 'unsupported' && (
-                    <Text style={styles.notifHint}>
-                      This browser doesn't support notifications.
-                    </Text>
-                  )}
-                </View>
-                {pushBusy ? (
-                  <View style={styles.notifSwitchWrap}><ActivityIndicator color="#c084fc" /></View>
-                ) : pushPermission === 'unsupported' ? (
-                  <View style={styles.notifSwitchWrap}>
+              <View style={styles.notifBlock}>
+                {/* Same icon + Text pattern as every other row above/below
+                    (Sign Out, Send Feedback, etc.) — direct siblings, both
+                    using modalButtonText, so the baseline matches exactly.
+                    A flex spacer pushes the switch to the same right edge
+                    the old text link used to sit at. Any hint text is a
+                    separate line below the row, not nested inside it, so
+                    it can't affect this row's own vertical alignment. */}
+                <View style={styles.notifMainRow}>
+                  <Ionicons name="notifications-outline" size={24} color="#fff" />
+                  <Text style={styles.modalButtonText}>Notifications</Text>
+                  <View style={{ flex: 1 }} />
+                  {pushBusy ? (
+                    <ActivityIndicator color="#c084fc" />
+                  ) : pushPermission === 'unsupported' ? (
                     <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
-                  </View>
-                ) : pushPermission === 'denied' ? (
-                  <View style={styles.notifSwitchWrap}>
+                  ) : pushPermission === 'denied' ? (
                     <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
-                  </View>
-                ) : (
-                  <View style={styles.notifSwitchWrap}>
+                  ) : (
                     <Switch
                       value={pushSubscribed}
                       onValueChange={(next) => (next ? handleEnablePush() : handleDisablePush())}
                       trackColor={{ false: '#374151', true: '#9333ea' }}
                       thumbColor="#fff"
                     />
-                  </View>
+                  )}
+                </View>
+                {!isStandalone && pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
+                  <Text style={styles.notifHint}>
+                    Add Orbit to your Home Screen first — that's required to get notifications.
+                  </Text>
+                )}
+                {pushPermission === 'denied' && (
+                  <Text style={styles.notifHint}>
+                    {isStandalone
+                      ? 'Blocked — open your phone\'s Settings app → Notifications → Orbit, and turn Allow Notifications on.'
+                      : 'Blocked — tap the site info/lock icon next to the address bar, then allow notifications for this site.'}
+                  </Text>
+                )}
+                {pushPermission === 'unsupported' && (
+                  <Text style={styles.notifHint}>
+                    This browser doesn't support notifications.
+                  </Text>
                 )}
               </View>
             )}
@@ -872,17 +874,16 @@ const styles = StyleSheet.create({
   modalButtonText: { color: '#fff', fontSize: 16, marginLeft: 16 },
   modalCloseButton: { marginTop: 24, alignItems: 'center', paddingVertical: 16, backgroundColor: '#1f2937', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  notifHint: { color: '#9ca3af', fontSize: 11, marginTop: 3, lineHeight: 14 },
-  // Explicit alignItems + fixed-height wrapper around the Switch so its
-  // vertical center matches the icon/text regardless of platform-native
-  // Switch rendering quirks (RN-web renders it as a styled checkbox
-  // whose intrinsic box can sit slightly off the row's shared baseline
-  // if left to alignItems alone).
-  notifRow: { alignItems: 'center' },
-  notifIcon: { flexShrink: 0 },
-  notifLabelCol: { flex: 1, marginLeft: 16, marginRight: 12, justifyContent: 'center' },
-  notifLabelText: { lineHeight: 20 },
-  notifSwitchWrap: { flexShrink: 0, height: 24, justifyContent: 'center', alignItems: 'center' },
+  // Same paddingVertical/border as modalButton, but as a plain container
+  // (not flexDirection: row) since it now stacks the icon+label+switch
+  // row on top of an optional hint line below — modalButton itself stays
+  // row-only for the simple icon+Text rows elsewhere in this list.
+  notifBlock: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#1f2937' },
+  // Icon then Text as direct siblings, identically to every other row
+  // (Sign Out, Send Feedback, ...) — that's what makes the baseline
+  // actually match instead of approximating it with wrapper views.
+  notifMainRow: { flexDirection: 'row', alignItems: 'center' },
+  notifHint: { color: '#9ca3af', fontSize: 11, marginTop: 6, marginLeft: 40, lineHeight: 14 },
   versionFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#1f2937',
