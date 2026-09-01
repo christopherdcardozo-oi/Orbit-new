@@ -14,6 +14,7 @@ import {
   Animated,
   Easing,
   AppState,
+  Linking,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -114,6 +115,42 @@ const HANDLE_TYPES: {
 ]
 
 const handleMeta = (t: HandleType) => HANDLE_TYPES.find((x) => x.value === t) || HANDLE_TYPES[HANDLE_TYPES.length - 1]
+
+// Convert a revealed handle into a URL the OS knows how to route.
+// Instagram/Snapchat use their public web URL (universal-link-aware:
+// the installed app claims those hostnames on iOS/Android and opens
+// itself, otherwise the browser opens the profile — either way the
+// user lands at the right place). tel:/mailto: are the OS standards
+// for phone / email. "other" is user free-text so it stays plain.
+// Returns null for types with no natural link, so callers can fall
+// back to rendering plain text.
+function handleLinkFor(t: HandleType, raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return null
+  const stripAt = (s: string) => s.replace(/^@+/, '')
+  switch (t) {
+    case 'instagram':
+      return `https://instagram.com/${encodeURIComponent(stripAt(value))}`
+    case 'snapchat':
+      return `https://snapchat.com/add/${encodeURIComponent(stripAt(value))}`
+    case 'phone':
+      return `tel:${value.replace(/[^\d+]/g, '')}`
+    case 'email':
+      return `mailto:${value}`
+    case 'other':
+      return null
+  }
+}
+
+async function openHandle(t: HandleType, raw: string) {
+  const url = handleLinkFor(t, raw)
+  if (!url) return
+  try {
+    await Linking.openURL(url)
+  } catch (e) {
+    console.warn('openHandle failed:', e)
+  }
+}
 
 // Conservative regex heuristics that flag common PII patterns in a
 // message before sending. Deliberately narrow to keep false positives
@@ -545,30 +582,26 @@ export default function ChatScreen() {
     }
     load()
 
+    // Event-driven reveal refresh. The DB trigger (migration 036)
+    // broadcasts a `reveal` event on this per-match private channel
+    // EXCLUSIVELY when reciprocity is confirmed server-side — first
+    // shares and non-matching handle types generate zero broadcasts.
+    // Replaces an earlier postgres_changes subscription on the raw
+    // contact_reveals table, which fired on every insert but also
+    // silently dropped events whenever the WebSocket went stale
+    // (phone locks, idle backgrounding, brief network blip) — the
+    // exact "I shared, partner reciprocated, but my screen only
+    // updates if I leave and come back" bug that got reported.
     const channel = supabase
-      .channel(`reveals-${id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'contact_reveals', filter: `match_id=eq.${id}` },
-        () => { load() }
-      )
+      .channel(`match:${id}`, { config: { private: true } })
+      .on('broadcast', { event: 'reveal' }, () => { load() })
       .subscribe()
 
-    // Safety net for realtime dropouts. Reported bug: partner shares
-    // back, the reveal shows up on their own screen (optimistic local
-    // update in submitReveal) but the FIRST person's screen — who's
-    // just sitting in the chat waiting — never updates until they
-    // leave and re-enter. Leaving/re-entering remounts this effect,
-    // which re-subscribes AND re-fetches — meaning the fix works
-    // simply because it re-fetches, not because of anything specific
-    // to navigation. The underlying cause is the WebSocket silently
-    // going stale (phone locks, tab backgrounds, brief network blip,
-    // switching wifi/cellular) without the postgres_changes channel
-    // visibly erroring or auto-recovering in a way that redelivers
-    // the missed event. Rather than chase that at the socket level,
-    // just re-run the same `load()` every time the app/tab regains
-    // focus — cheap, and it makes the exact "reopen it" workaround
-    // happen automatically.
+    // Safety-net backstop for the rare case where the WebSocket is
+    // truly dead at the moment the broadcast fires (nothing can
+    // deliver over a dead socket). Refetching on tab/app refocus
+    // silently self-heals it — matches the "leave and come back"
+    // workaround without requiring the user to actually navigate.
     const refetchOnResume = () => { load() }
     if (Platform.OS === 'web') {
       const onVisible = () => {
@@ -1003,14 +1036,33 @@ export default function ChatScreen() {
               <Ionicons name="checkmark-circle" size={18} color="#86efac" />
               <View style={{ flex: 1, marginLeft: 8 }}>
                 {revealedFromPartner.length > 0 ? (
-                  revealedFromPartner.map((r) => (
-                    <Text key={r.handle_type} style={styles.revealBannerValueLine} selectable>
-                      <Text style={styles.revealBannerLabel}>
-                        {handleMeta(r.handle_type).emoji} {handleMeta(r.handle_type).label}: {' '}
+                  revealedFromPartner.map((r) => {
+                    const link = handleLinkFor(r.handle_type, r.handle_value ?? '')
+                    return (
+                      <Text key={r.handle_type} style={styles.revealBannerValueLine} selectable>
+                        <Text style={styles.revealBannerLabel}>
+                          {handleMeta(r.handle_type).emoji} {handleMeta(r.handle_type).label}: {' '}
+                        </Text>
+                        {link ? (
+                          // Nested Text with onPress is the RN-safe way
+                          // to tap through an outer TouchableOpacity — a
+                          // nested Pressable/TouchableOpacity would fight
+                          // the parent for the gesture. The onPress here
+                          // wins because RN dispatches text taps before
+                          // walking back up to the enclosing touchable.
+                          <Text
+                            style={styles.revealBannerValueLink}
+                            onPress={() => openHandle(r.handle_type, r.handle_value ?? '')}
+                            suppressHighlighting={false}
+                          >
+                            {r.handle_value}
+                          </Text>
+                        ) : (
+                          r.handle_value
+                        )}
                       </Text>
-                      {r.handle_value}
-                    </Text>
-                  ))
+                    )
+                  })
                 ) : (
                   <Text style={styles.revealBannerText}>
                     Add a matching type to unlock theirs.
@@ -1613,6 +1665,7 @@ const styles = StyleSheet.create({
   revealBannerLabel: { color: '#9ca3af', fontSize: 12 },
   revealBannerValue: { color: '#fff', fontSize: 15, fontWeight: '600' },
   revealBannerValueLine: { color: '#fff', fontSize: 14, lineHeight: 20 },
+  revealBannerValueLink: { color: '#c084fc', textDecorationLine: 'underline', fontWeight: '600' },
   revealBannerHint: { color: '#c084fc', fontSize: 12, marginTop: 4, fontStyle: 'italic' },
   revealBannerLink: { color: '#c084fc', fontSize: 12, fontWeight: '700', marginLeft: 8 },
   revealBannerMine: { color: '#9ca3af', fontSize: 12, marginTop: 3 },
