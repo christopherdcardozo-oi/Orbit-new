@@ -7,6 +7,7 @@ import { registerForPushNotificationsAsync } from '../lib/notifications'
 import * as webPush from '../lib/webPush'
 import { useIsStandalone } from '../lib/useIsStandalone'
 import InstallHint from '../components/InstallHint'
+import UpdateBanner from '../components/UpdateBanner'
 
 // Bumping the counts (see docs/push-notifications.md#2026-09-01) — most of
 // the 41 signed-up users had 0 web_push_subscriptions rows. Root cause:
@@ -156,6 +157,7 @@ export default function RootLayout() {
       <View style={styles.rootContainer}>
         <View style={[styles.appContainer, isWeb && styles.webContainer]}>
           <InstallHint />
+          <UpdateBanner />
           <Slot />
         </View>
       </View>
