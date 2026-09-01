@@ -78,6 +78,13 @@ export default function ChatTabScreen() {
   // Cleared per-match as they tap up/down/skip; realtime match changes
   // also trigger a re-fetch so newly-expired matches show up right away.
   const [rateableMatches, setRateableMatches] = useState<Array<{ id: string; partnerAlias: string }>>([]);
+  // "X active yesterday · X conversations yesterday" — a once-a-day
+  // community-pulse stat (migration 044). Reassurance for the "is
+  // anyone actually using this" question that hits hardest on a small,
+  // single-campus pool — not shown pre-login; see docs discussion for
+  // why a raw number is a better fit here than on the landing page at
+  // Orbit's current scale.
+  const [dailyStats, setDailyStats] = useState<{ activeUsers: number; conversations: number } | null>(null);
   // Match IDs currently showing the "Thanks for rating…" confirmation
   // before silently unmounting. Rating is fired immediately; the card
   // just sticks around a beat so the user sees they were heard.
@@ -246,6 +253,17 @@ export default function ChatTabScreen() {
     </View>
   );
 
+  const renderDailyStats = () => {
+    if (!dailyStats) return null;
+    return (
+      <View style={styles.dailyStatsPill}>
+        <Text style={styles.dailyStatsText}>
+          {dailyStats.activeUsers} active yesterday · {dailyStats.conversations} conversation{dailyStats.conversations === 1 ? '' : 's'}
+        </Text>
+      </View>
+    );
+  };
+
   useEffect(() => {
     const fetchProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -276,6 +294,15 @@ export default function ChatTabScreen() {
           .eq('email_domain', profile.email_domain)
           .single();
         if (uni?.timezone) setTimezone(uni.timezone);
+
+        const { data: stats } = await supabase
+          .from('campus_daily_stats')
+          .select('active_users, conversations')
+          .eq('campus_domain', profile.email_domain)
+          .order('stat_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (stats) setDailyStats({ activeUsers: stats.active_users, conversations: stats.conversations });
       }
 
       await fetchActiveMatch(user.id);
@@ -436,6 +463,8 @@ export default function ChatTabScreen() {
             <Text style={styles.countdownLabel}>Connection expires in</Text>
             <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
           </View>
+
+          {renderDailyStats()}
         </View>
 
         {/* Invite a friend — visible on the matched view too. A user
@@ -542,6 +571,8 @@ export default function ChatTabScreen() {
           <Text style={styles.countdownLabel}>Next reset in</Text>
           <Text style={styles.countdown}>{formatCountdown(secondsLeft)}</Text>
         </View>
+
+        {renderDailyStats()}
 
         {/* Invite a friend — front and center on the lobby since this
             is where the "small pool, no match yet" feeling hits.
@@ -904,5 +935,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     paddingVertical: 8,
+  },
+  dailyStatsPill: {
+    marginTop: 14,
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: 'rgba(168, 85, 247, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.2)',
+  },
+  dailyStatsText: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

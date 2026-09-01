@@ -224,6 +224,19 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
 
+  // Typing indicator — pure ephemeral broadcast on the same private
+  // `match:{id}` channel already used for reveal notifications
+  // (migration 036's RLS policy on realtime.messages authorizes ANY
+  // broadcast event on that channel for match participants, not just
+  // 'reveal', so this needed zero new migrations). No DB writes: a
+  // 'typing' event just means "someone is typing right now," expires
+  // itself client-side if a follow-up 'stopped' event never arrives
+  // (dropped connection, tab closed mid-type, etc).
+  const [partnerTyping, setPartnerTyping] = useState(false)
+  const revealChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const typingSentAtRef = useRef(0)
+  const partnerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const [timeLeftStr, setTimeLeftStr] = useState('')
   const [expired, setExpired] = useState(false)
   // secondsLeft is always tracked so the warning banner can decide
@@ -595,7 +608,23 @@ export default function ChatScreen() {
     const channel = supabase
       .channel(`match:${id}`, { config: { private: true } })
       .on('broadcast', { event: 'reveal' }, () => { load() })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        // Ignore our own broadcast (shouldn't normally arrive — this
+        // client isn't in the recipient set for its own send — but
+        // cheap enough to guard explicitly rather than rely on that).
+        if (payload?.userId === userId) return
+        setPartnerTyping(!!payload?.typing)
+        if (partnerTypingTimeoutRef.current) clearTimeout(partnerTypingTimeoutRef.current)
+        if (payload?.typing) {
+          // Self-clears if the partner's own 'stopped typing' event
+          // never arrives (they closed the tab mid-keystroke, lost
+          // connection, etc) — 4s of silence reads as "done typing"
+          // same as iMessage/Signal's own timeout-based indicators.
+          partnerTypingTimeoutRef.current = setTimeout(() => setPartnerTyping(false), 4000)
+        }
+      })
       .subscribe()
+    revealChannelRef.current = channel
 
     // Safety-net backstop for the rare case where the WebSocket is
     // truly dead at the moment the broadcast fires (nothing can
@@ -611,6 +640,8 @@ export default function ChatScreen() {
       window.addEventListener('focus', onVisible)
       return () => {
         supabase.removeChannel(channel)
+        revealChannelRef.current = null
+        if (partnerTypingTimeoutRef.current) clearTimeout(partnerTypingTimeoutRef.current)
         document.removeEventListener('visibilitychange', onVisible)
         window.removeEventListener('focus', onVisible)
       }
@@ -620,6 +651,8 @@ export default function ChatScreen() {
       })
       return () => {
         supabase.removeChannel(channel)
+        revealChannelRef.current = null
+        if (partnerTypingTimeoutRef.current) clearTimeout(partnerTypingTimeoutRef.current)
         sub.remove()
       }
     }
@@ -751,10 +784,29 @@ export default function ChatScreen() {
     handleBack()
   }
 
+  // Broadcasts this client's typing state to the partner over the same
+  // private channel the reveal notifications use. Throttled to at most
+  // once every 2s while actively typing (no point re-announcing "yep,
+  // still typing" on every keystroke) but 'stopped' always sends
+  // immediately — that's the one that matters for the indicator
+  // disappearing promptly instead of lingering the full 4s timeout.
+  const sendTyping = useCallback((typing: boolean) => {
+    if (!userId || !revealChannelRef.current) return
+    const now = Date.now()
+    if (typing && now - typingSentAtRef.current < 2000) return
+    typingSentAtRef.current = now
+    revealChannelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { typing, userId },
+    })
+  }, [userId])
+
   // Actual insert-and-append. Called by handleSend when the message
   // looks clean, or by the PII warning's "Send anyway" path.
   const doSend = useCallback(async (content: string) => {
     if (!content || !userId || !id || !isActive) return
+    sendTyping(false)
     setSending(true)
     setInputText('')
     setPiiWarning(null)
@@ -771,7 +823,7 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, inserted])
     }
     setSending(false)
-  }, [userId, id, isActive])
+  }, [userId, id, isActive, sendTyping])
 
   const handleSend = useCallback(() => {
     const content = inputText.trim()
@@ -855,7 +907,10 @@ export default function ChatScreen() {
           activeOpacity={0.7}
         >
           <MaterialCommunityIcons name={match.partnerAvatar as any} size={20} color="#c084fc" />
-          <Text style={styles.headerTitle} numberOfLines={1}>{match.partnerAlias}</Text>
+          <View>
+            <Text style={styles.headerTitle} numberOfLines={1}>{match.partnerAlias}</Text>
+            {partnerTyping && <Text style={styles.headerTypingText}>typing…</Text>}
+          </View>
           <Ionicons name="chevron-down" size={14} color="#9ca3af" />
         </TouchableOpacity>
         <TouchableOpacity style={styles.backButton} onPress={() => setMenuOpen(true)}>
@@ -1089,7 +1144,10 @@ export default function ChatScreen() {
             placeholder={isActive ? 'Type a message…' : 'This connection has expired'}
             placeholderTextColor="#6b7280"
             value={inputText}
-            onChangeText={setInputText}
+            onChangeText={(t) => {
+              setInputText(t)
+              sendTyping(t.trim().length > 0)
+            }}
             editable={isActive}
             multiline
             maxLength={2000}
@@ -1483,6 +1541,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  headerTypingText: {
+    color: '#c084fc',
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 1,
   },
   warningBanner: {
     flexDirection: 'row',
