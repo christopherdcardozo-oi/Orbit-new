@@ -40,6 +40,17 @@ export function getCurrentBundleSrc(): string | null {
   return null;
 }
 
+// Short, human-showable id for the currently-running build — the
+// content hash out of the bundle filename, truncated. Used in the
+// Settings footer so "which version am I on" is answerable without
+// opening devtools.
+export function getCurrentBuildId(): string | null {
+  const src = getCurrentBundleSrc();
+  if (!src) return null;
+  const match = src.match(/entry-([a-f0-9]+)\.js/);
+  return match ? match[1].slice(0, 7) : null;
+}
+
 export async function isUpdateAvailable(): Promise<boolean> {
   if (Platform.OS !== 'web') return false;
   const current = getCurrentBundleSrc();

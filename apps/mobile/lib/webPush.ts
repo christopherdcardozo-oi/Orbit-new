@@ -38,6 +38,24 @@ export function getPermission(): WebPushPermission {
   return (Notification.permission as WebPushPermission) ?? 'default';
 }
 
+// Whether there's currently an active push subscription — distinct
+// from getPermission(). A browser never lets JS revoke a permission
+// grant once given, so Notification.permission stays 'granted'
+// forever even after unsubscribe() removes the actual subscription.
+// A toggle UI needs THIS, not getPermission(), or "turning it off"
+// will visually snap right back to on.
+export async function hasActiveSubscription(): Promise<boolean> {
+  if (!isSupported()) return false;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/');
+    if (!reg) return false;
+    const sub = await reg.pushManager.getSubscription();
+    return !!sub;
+  } catch {
+    return false;
+  }
+}
+
 // VAPID keys are base64url-encoded; pushManager.subscribe needs Uint8Array.
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);

@@ -10,6 +10,7 @@ import { PERSONALITY_QUESTIONS } from '../../lib/personality';
 import { HOBBIES, ACTIVITIES } from '../../lib/interests';
 import * as webPush from '../../lib/webPush';
 import { useIsStandalone } from '../../lib/useIsStandalone';
+import { getCurrentBuildId, isUpdateAvailable } from '../../lib/versionCheck';
 
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 
@@ -69,15 +70,21 @@ export default function ProfileTabScreen() {
   // after subscribe/unsubscribe. Not relevant on native (future).
   const isStandalone = useIsStandalone();
   const [pushPermission, setPushPermission] = useState<webPush.WebPushPermission>('unsupported');
+  // Separate from pushPermission — see hasActiveSubscription()'s comment
+  // in lib/webPush.ts for why the toggle needs this instead.
+  const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   useEffect(() => {
-    if (showSettings) setPushPermission(webPush.getPermission());
+    if (!showSettings) return;
+    setPushPermission(webPush.getPermission());
+    webPush.hasActiveSubscription().then(setPushSubscribed);
   }, [showSettings]);
   const handleEnablePush = async () => {
     setPushBusy(true);
     const result = await webPush.subscribe();
     setPushBusy(false);
     setPushPermission(webPush.getPermission());
+    setPushSubscribed(result.ok);
     if (!result.ok) {
       const reason = result.reason;
       if (reason === 'denied') {
@@ -101,7 +108,30 @@ export default function ProfileTabScreen() {
     await webPush.unsubscribe();
     setPushBusy(false);
     setPushPermission(webPush.getPermission());
+    setPushSubscribed(false);
   };
+
+  // Version footer at the bottom of Settings — shows which build is
+  // currently running and when that was last verified against the
+  // live deploy, plus a manual "Check now" / "Refresh" action for
+  // anyone who doesn't want to wait for UpdateBanner's own 10-minute
+  // poll (components/UpdateBanner.tsx handles the unprompted version
+  // of this same check).
+  const [buildId] = useState<string | null>(() => getCurrentBuildId());
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const runUpdateCheck = async () => {
+    if (Platform.OS !== 'web') return;
+    setCheckingUpdate(true);
+    const available = await isUpdateAvailable();
+    setUpdateAvailable(available);
+    setLastCheckedAt(new Date());
+    setCheckingUpdate(false);
+  };
+  useEffect(() => {
+    if (showSettings) runUpdateCheck();
+  }, [showSettings]);
 
   useEffect(() => {
     fetchProfile();
@@ -536,10 +566,10 @@ export default function ProfileTabScreen() {
                 glance, easy to skim past; a toggle in the "off"
                 position reads as unfinished setup immediately. */}
             {Platform.OS === 'web' && (
-              <View style={styles.modalButton}>
-                <Ionicons name="notifications-outline" size={24} color="#fff" />
-                <View style={{ flex: 1, marginLeft: 16, marginRight: 12 }}>
-                  <Text style={styles.modalButtonText}>Notifications</Text>
+              <View style={[styles.modalButton, styles.notifRow]}>
+                <Ionicons name="notifications-outline" size={24} color="#fff" style={styles.notifIcon} />
+                <View style={styles.notifLabelCol}>
+                  <Text style={[styles.modalButtonText, styles.notifLabelText]}>Notifications</Text>
                   {!isStandalone && pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
                     <Text style={styles.notifHint}>
                       Add Orbit to your Home Screen first — that's required to get notifications.
@@ -559,18 +589,24 @@ export default function ProfileTabScreen() {
                   )}
                 </View>
                 {pushBusy ? (
-                  <ActivityIndicator color="#c084fc" />
+                  <View style={styles.notifSwitchWrap}><ActivityIndicator color="#c084fc" /></View>
                 ) : pushPermission === 'unsupported' ? (
-                  <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
+                  <View style={styles.notifSwitchWrap}>
+                    <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
+                  </View>
                 ) : pushPermission === 'denied' ? (
-                  <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
+                  <View style={styles.notifSwitchWrap}>
+                    <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
+                  </View>
                 ) : (
-                  <Switch
-                    value={pushPermission === 'granted'}
-                    onValueChange={(next) => (next ? handleEnablePush() : handleDisablePush())}
-                    trackColor={{ false: '#374151', true: '#9333ea' }}
-                    thumbColor="#fff"
-                  />
+                  <View style={styles.notifSwitchWrap}>
+                    <Switch
+                      value={pushSubscribed}
+                      onValueChange={(next) => (next ? handleEnablePush() : handleDisablePush())}
+                      trackColor={{ false: '#374151', true: '#9333ea' }}
+                      thumbColor="#fff"
+                    />
+                  </View>
                 )}
               </View>
             )}
@@ -611,6 +647,26 @@ export default function ProfileTabScreen() {
               <Ionicons name="trash-outline" size={24} color="#ef4444" />
               <Text style={[styles.modalButtonText, { color: '#ef4444' }]}>Delete Account</Text>
             </TouchableOpacity>
+
+            {Platform.OS === 'web' && (
+              <View style={styles.versionFooter}>
+                <Text style={styles.versionFooterText}>
+                  {buildId ? `Build ${buildId}` : 'Local build'}
+                  {lastCheckedAt
+                    ? ` · checked ${lastCheckedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                    : ''}
+                </Text>
+                <TouchableOpacity onPress={updateAvailable ? () => window.location.reload() : runUpdateCheck} disabled={checkingUpdate}>
+                  {checkingUpdate ? (
+                    <ActivityIndicator size="small" color="#c084fc" />
+                  ) : (
+                    <Text style={[styles.versionFooterLink, updateAvailable && styles.versionFooterLinkUrgent]}>
+                      {updateAvailable ? 'Refresh to update' : 'Check for updates'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowSettings(false)}>
               <Text style={styles.modalCloseText}>Close</Text>
@@ -817,6 +873,23 @@ const styles = StyleSheet.create({
   modalCloseButton: { marginTop: 24, alignItems: 'center', paddingVertical: 16, backgroundColor: '#1f2937', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   notifHint: { color: '#9ca3af', fontSize: 11, marginTop: 3, lineHeight: 14 },
+  // Explicit alignItems + fixed-height wrapper around the Switch so its
+  // vertical center matches the icon/text regardless of platform-native
+  // Switch rendering quirks (RN-web renders it as a styled checkbox
+  // whose intrinsic box can sit slightly off the row's shared baseline
+  // if left to alignItems alone).
+  notifRow: { alignItems: 'center' },
+  notifIcon: { flexShrink: 0 },
+  notifLabelCol: { flex: 1, marginLeft: 16, marginRight: 12, justifyContent: 'center' },
+  notifLabelText: { lineHeight: 20 },
+  notifSwitchWrap: { flexShrink: 0, height: 24, justifyContent: 'center', alignItems: 'center' },
+  versionFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#1f2937',
+  },
+  versionFooterText: { color: '#4b5563', fontSize: 11 },
+  versionFooterLink: { color: '#9ca3af', fontSize: 12, fontWeight: '600' },
+  versionFooterLinkUrgent: { color: '#4ade80' },
   feedbackInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
     borderWidth: 1,
