@@ -307,28 +307,6 @@ function generateIcebreaker(a: Profile, b: Profile): string {
   return primaryLine(primary) + (secondary ? secondaryClause(secondary) : '');
 }
 
-// Fire-and-log-only Expo push. Failures never abort the batch.
-async function sendPushNotification(
-  expoPushToken: string,
-  title: string,
-  body: string,
-  data: Record<string, unknown> = {},
-): Promise<void> {
-  try {
-    await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ to: expoPushToken, sound: 'default', title, body, data }),
-    });
-  } catch (err) {
-    console.error('push notification failed:', err);
-  }
-}
-
 // ---------- Per-campus matchmaking ----------
 
 const RESET_WINDOW_SECONDS = 15 * 60; // matches the cron's 15-minute tick
@@ -366,6 +344,14 @@ async function runMatchmakingForCampus(
 
   const domainProfileIds = domainProfiles.map((p) => p.id);
 
+  // expires_at for every match created this tick = the UTC instant of
+  // THIS campus's next local midnight — not the server clock's midnight
+  // (Deno's runtime is UTC, so the old `new Date(); setHours(24,0,0,0)`
+  // silently computed UTC midnight regardless of the campus's real
+  // timezone). Computed early (not just before the main pairing loop)
+  // because the scheduled-matches fulfillment step below also needs it.
+  const expiresAt = new Date(Date.now() + secondsUntilMidnight * 1000);
+
   if (justPassedMidnight) {
     // Daily reset: expire this campus's active matches so everyone is
     // eligible for a fresh match today. Scoped to this campus's profile
@@ -394,9 +380,56 @@ async function runMatchmakingForCampus(
     result.mode = 'topup';
   }
 
+  // Admin "Schedule Match" fulfillment (migration 042) — only at the
+  // actual reset, so a pairing queued because someone was mid-match
+  // gets applied the instant they're free again, before the normal
+  // algorithm has a chance to pair either of them with someone else.
+  const scheduledFulfilled = new Set<string>();
+  if (justPassedMidnight) {
+    const { data: scheduled, error: scheduledError } = await supabase
+      .from('scheduled_matches')
+      .select('id, user1_id, user2_id')
+      .is('fulfilled_at', null)
+      .in('user1_id', domainProfileIds)
+      .in('user2_id', domainProfileIds);
+
+    if (scheduledError) {
+      result.errors.push(`Failed to fetch scheduled matches for ${domain}: ${scheduledError.message}`);
+    } else {
+      const profileById = new Map(domainProfiles.map((p) => [p.id, p]));
+      for (const s of scheduled ?? []) {
+        // One person can only fulfill one schedule per tick — skip a
+        // second queued pairing involving someone already just matched.
+        if (scheduledFulfilled.has(s.user1_id) || scheduledFulfilled.has(s.user2_id)) continue;
+        const userA = profileById.get(s.user1_id);
+        const userB = profileById.get(s.user2_id);
+        if (!userA || !userB) continue; // shouldn't happen — both already filtered to this campus
+
+        const icebreaker = generateIcebreaker(userA, userB);
+        const { error: insertErr } = await supabase.from('matches').insert({
+          user1_id: s.user1_id,
+          user2_id: s.user2_id,
+          status: 'active',
+          icebreaker,
+          expires_at: expiresAt.toISOString(),
+        });
+        if (insertErr) {
+          result.errors.push(`Failed to fulfill scheduled match ${s.id}: ${insertErr.message}`);
+          continue;
+        }
+        await supabase.from('match_history').insert({ user1_id: s.user1_id, user2_id: s.user2_id });
+        await supabase.from('scheduled_matches').update({ fulfilled_at: new Date().toISOString() }).eq('id', s.id);
+        scheduledFulfilled.add(s.user1_id);
+        scheduledFulfilled.add(s.user2_id);
+        result.matched++;
+      }
+    }
+  }
+
   // Who currently has an active match? (Correct in both modes: right
-  // after a reset this is empty since we just expired everyone; in
-  // top-up mode it reflects real in-progress matches.)
+  // after a reset this is empty except for anyone just paired by the
+  // scheduled-match fulfillment above; in top-up mode it reflects real
+  // in-progress matches.)
   const { data: activeMatches, error: activeError } = await supabase
     .from('matches')
     .select('user1_id, user2_id')
@@ -414,7 +447,9 @@ async function runMatchmakingForCampus(
     alreadyMatchedIds.add(m.user2_id);
   }
 
-  const eligibleProfiles = domainProfiles.filter((p) => !alreadyMatchedIds.has(p.id));
+  const eligibleProfiles = domainProfiles.filter(
+    (p) => !alreadyMatchedIds.has(p.id) && !scheduledFulfilled.has(p.id),
+  );
   if (eligibleProfiles.length < 2) {
     result.oddManOut = eligibleProfiles.map((p) => p.id);
     return result;
@@ -479,13 +514,6 @@ async function runMatchmakingForCampus(
   const shuffled = fisherYatesShuffle(eligibleProfiles);
   const matched = new Set<string>();
 
-  // expires_at for every match created this tick = the UTC instant of
-  // THIS campus's next local midnight — not the server clock's midnight
-  // (Deno's runtime is UTC, so the old `new Date(); setHours(24,0,0,0)`
-  // silently computed UTC midnight regardless of the campus's real
-  // timezone).
-  const expiresAt = new Date(Date.now() + secondsUntilMidnight * 1000);
-
   const newMatches: Array<{
     user1_id: string;
     user2_id: string;
@@ -494,7 +522,6 @@ async function runMatchmakingForCampus(
     expires_at: string;
   }> = [];
   const newHistory: Array<{ user1_id: string; user2_id: string }> = [];
-  const notifications: Array<{ token: string; title: string; body: string }> = [];
 
   for (let i = 0; i < shuffled.length; i++) {
     const userA = shuffled[i];
@@ -532,21 +559,6 @@ async function runMatchmakingForCampus(
         expires_at: expiresAt.toISOString(),
       });
       newHistory.push({ user1_id, user2_id });
-
-      if (userA.fcm_token) {
-        notifications.push({
-          token: userA.fcm_token,
-          title: 'New Cosmic Match! 🚀',
-          body: "You've been paired with someone new. Chat before the connection expires!",
-        });
-      }
-      if (foundMatch.fcm_token) {
-        notifications.push({
-          token: foundMatch.fcm_token,
-          title: 'New Cosmic Match! 🚀',
-          body: "You've been paired with someone new. Chat before the connection expires!",
-        });
-      }
 
       result.matched++;
     }
@@ -607,20 +619,6 @@ async function runMatchmakingForCampus(
           expires_at: expiresAt.toISOString(),
         });
         newHistory.push({ user1_id, user2_id });
-        if (userA.fcm_token) {
-          notifications.push({
-            token: userA.fcm_token,
-            title: 'You matched again! 🌠',
-            body: "Small pool tonight — you're paired with a familiar face. Chat before it expires!",
-          });
-        }
-        if (foundMatch.fcm_token) {
-          notifications.push({
-            token: foundMatch.fcm_token,
-            title: 'You matched again! 🌠',
-            body: "Small pool tonight — you're paired with a familiar face. Chat before it expires!",
-          });
-        }
         result.matched++;
       }
     }

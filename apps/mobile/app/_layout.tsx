@@ -20,6 +20,12 @@ const AUTO_PUSH_PROMPT_KEY = 'orbit-auto-push-prompted'
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
   const [initialized, setInitialized] = useState(false)
+  // null = not checked yet (or no session). false = confirmed banned
+  // (profiles.is_active = false — see app/admin/users.tsx "Ban
+  // account"). Previously banning only excluded someone from the
+  // matchmaker's pool; they could still fully sign in and use the app.
+  // This flag + the redirect below is what actually closes that gap.
+  const [isActive, setIsActive] = useState<boolean | null>(null)
   const segments = useSegments()
   const router = useRouter()
   const isStandalone = useIsStandalone()
@@ -30,6 +36,7 @@ export default function RootLayout() {
       setInitialized(true)
       if (session?.user) {
         setupPushNotifications(session.user.id)
+        checkActive(session.user.id)
       }
     })
 
@@ -37,6 +44,9 @@ export default function RootLayout() {
       setSession(session)
       if (session?.user) {
         setupPushNotifications(session.user.id)
+        checkActive(session.user.id)
+      } else {
+        setIsActive(null)
       }
     })
 
@@ -54,6 +64,22 @@ export default function RootLayout() {
     } catch (e) {
       console.log('Error setting up push notifications', e)
     }
+  }
+
+  const checkActive = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('is_active')
+      .eq('id', userId)
+      .maybeSingle()
+    if (error) {
+      // Fail open — a network hiccup shouldn't lock someone out of an
+      // otherwise-fine account. The redirect below only fires on an
+      // explicit `false`, never on "couldn't tell."
+      console.log('Error checking account status', error)
+      return
+    }
+    setIsActive(data?.is_active ?? true)
   }
 
   // Web push: auto-prompt once per browser, right after we know
@@ -114,13 +140,28 @@ export default function RootLayout() {
     // session-based redirect below must skip them the same way it skips
     // the chat and signup routes.
     const onLegalScreen = (segments as string[])[0] === 'legal'
+    // app/admin/* — same top-level-route situation as chat and legal
+    // above. The admin screens do their own is_admin gate on mount
+    // (see app/admin/_layout.tsx); this exemption just lets them
+    // render at all instead of bouncing straight back to '/(app)'.
+    const onAdminScreen = (segments as string[])[0] === 'admin'
+    const onSuspendedScreen = (segments as string[])[0] === 'suspended'
 
-    if (session && !inAppGroup && !onSignupScreen && !onChatScreen && !onLegalScreen) {
+    // Banned account: hard-redirect to /suspended regardless of what
+    // route they were headed to, same as the no-session case below.
+    // Checked before every other branch so a stale isActive===false
+    // from a previous check can't be raced by one of the exemptions.
+    if (session && isActive === false && !onSuspendedScreen) {
+      router.replace('/suspended')
+      return
+    }
+
+    if (session && !inAppGroup && !onSignupScreen && !onChatScreen && !onLegalScreen && !onAdminScreen && !onSuspendedScreen) {
       router.replace('/(app)')
     } else if (!session && inAppGroup) {
       router.replace('/')
     }
-  }, [session, initialized, segments])
+  }, [session, initialized, segments, isActive])
 
   const isWeb = Platform.OS === 'web'
 

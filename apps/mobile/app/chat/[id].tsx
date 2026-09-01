@@ -1135,8 +1135,8 @@ export default function ChatScreen() {
 
       {/* Report modal */}
       <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => setReportOpen(false)}>
-        <View style={styles.menuBackdrop}>
-          <View style={[styles.menuSheet, { padding: 20 }]}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setReportOpen(false)}>
+          <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>Report and Block {match.partnerAlias}</Text>
             <Text style={styles.sheetSubtitle}>
               We'll review this and you two will never match again. Thanks for keeping Orbit safe.
@@ -1182,14 +1182,14 @@ export default function ChatScreen() {
                 {reportBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Report and Block</Text>}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Block confirmation */}
       <Modal visible={blockConfirmOpen} transparent animationType="fade" onRequestClose={() => setBlockConfirmOpen(false)}>
-        <View style={styles.menuBackdrop}>
-          <View style={[styles.menuSheet, { padding: 20 }]}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setBlockConfirmOpen(false)}>
+          <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>Block {match.partnerAlias}?</Text>
             <Text style={styles.sheetSubtitle}>
               You'll leave this chat, and Orbit will never match the two of you again.
@@ -1206,8 +1206,8 @@ export default function ChatScreen() {
                 {blockBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Block</Text>}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Contact-reveal modal — manages your list of shared handles.
@@ -1216,8 +1216,8 @@ export default function ChatScreen() {
           it. Reciprocity is per-type: your Instagram unlocks theirs
           only if they've also shared Instagram. */}
       <Modal visible={revealModalOpen} transparent animationType="slide" onRequestClose={() => setRevealModalOpen(false)}>
-        <View style={styles.menuBackdrop}>
-          <View style={[styles.menuSheet, { padding: 20 }]}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setRevealModalOpen(false)}>
+          <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>Share your contact</Text>
             <Text style={styles.sheetSubtitle}>
               Share as many types as you like. Each is only revealed to {match.partnerAlias} once they share that same type too.
@@ -1312,8 +1312,8 @@ export default function ChatScreen() {
             <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setRevealModalOpen(false)}>
               <Text style={styles.sheetCancelText}>Done</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Mini profile — reveals partner's personality answers + basics.
@@ -1321,8 +1321,8 @@ export default function ChatScreen() {
           is free. No RLS gap: the partner-profile visibility policy
           (migration 016) is what let the initial fetch succeed. */}
       <Modal visible={profileModalOpen} transparent animationType="slide" onRequestClose={() => setProfileModalOpen(false)}>
-        <View style={styles.menuBackdrop}>
-          <View style={[styles.menuSheet, { padding: 20, maxHeight: '85%' }]}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setProfileModalOpen(false)}>
+          <Pressable style={[styles.menuSheet, { padding: 20, maxHeight: '85%' }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.profileHeaderRow}>
               <View style={styles.profileAvatarRing}>
                 <MaterialCommunityIcons name={match.partnerAvatar as any} size={44} color="#c084fc" />
@@ -1378,8 +1378,8 @@ export default function ChatScreen() {
             <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setProfileModalOpen(false)}>
               <Text style={styles.sheetCancelText}>Close</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* PII send-warning. Nudge only — the user can send anyway. */}
@@ -1389,8 +1389,8 @@ export default function ChatScreen() {
         animationType="fade"
         onRequestClose={() => setPiiWarning(null)}
       >
-        <View style={styles.menuBackdrop}>
-          <View style={[styles.menuSheet, { padding: 20 }]}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setPiiWarning(null)}>
+          <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Ionicons name="warning-outline" size={28} color="#fbbf24" style={{ alignSelf: 'center', marginBottom: 8 }} />
             <Text style={styles.sheetTitle}>Heads up</Text>
             <Text style={styles.sheetSubtitle}>
@@ -1415,8 +1415,8 @@ export default function ChatScreen() {
                 <Text style={styles.sheetPrimaryText}>Send anyway</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Disintegrate blackout overlay — sits over everything, fades

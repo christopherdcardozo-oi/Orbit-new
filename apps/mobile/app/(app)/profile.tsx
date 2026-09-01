@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
@@ -549,15 +549,25 @@ export default function ProfileTabScreen() {
       </ScrollView>
 
       {/* Settings Modal */}
-      <Modal visible={showSettings} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+      <Modal visible={showSettings} animationType="slide" transparent={true} onRequestClose={() => setShowSettings(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowSettings(false)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Settings</Text>
 
             <TouchableOpacity style={styles.modalButton} onPress={handleSignOut}>
               <Ionicons name="log-out-outline" size={24} color="#fff" />
               <Text style={styles.modalButtonText}>Sign Out</Text>
             </TouchableOpacity>
+
+            {profile?.is_admin && (
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => { setShowSettings(false); router.push('/admin'); }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={24} color="#9333ea" />
+                <Text style={[styles.modalButtonText, { color: '#c084fc' }]}>Admin</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Notifications toggle. Only meaningful on web; native
                 builds will get a separate push flow via Expo Push.
@@ -673,14 +683,14 @@ export default function ProfileTabScreen() {
             <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowSettings(false)}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Feedback Modal */}
-      <Modal visible={showFeedback} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: 24 }]}>
+      <Modal visible={showFeedback} animationType="slide" transparent={true} onRequestClose={() => setShowFeedback(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowFeedback(false)}>
+          <Pressable style={[styles.modalContent, { paddingBottom: 24 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Send Feedback</Text>
 
             <Text style={[styles.label, { marginTop: 8 }]}>What is this about?</Text>
@@ -743,8 +753,8 @@ export default function ProfileTabScreen() {
             <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowFeedback(false)}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
