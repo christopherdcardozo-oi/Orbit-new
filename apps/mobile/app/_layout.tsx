@@ -4,13 +4,24 @@ import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native'
 import { registerForPushNotificationsAsync } from '../lib/notifications'
+import * as webPush from '../lib/webPush'
+import { useIsStandalone } from '../lib/useIsStandalone'
 import InstallHint from '../components/InstallHint'
+
+// Bumping the counts (see docs/push-notifications.md#2026-09-01) — most of
+// the 41 signed-up users had 0 web_push_subscriptions rows. Root cause:
+// the ONLY way to subscribe was manually opening Settings and flipping a
+// toggle, which nobody does unprompted. This key gates a single
+// auto-prompt per browser so we ask once, right after signing in, instead
+// of relying on someone finding the toggle themselves.
+const AUTO_PUSH_PROMPT_KEY = 'orbit-auto-push-prompted'
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
   const [initialized, setInitialized] = useState(false)
   const segments = useSegments()
   const router = useRouter()
+  const isStandalone = useIsStandalone()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -43,6 +54,40 @@ export default function RootLayout() {
       console.log('Error setting up push notifications', e)
     }
   }
+
+  // Web push: auto-prompt once per browser, right after we know
+  // there's a signed-in session AND the app is running as an
+  // installed PWA. Previously the ONLY way to subscribe was manually
+  // finding the toggle in Profile > Settings — nobody did, so 39 of
+  // the first 41 signed-up users had zero web_push_subscriptions
+  // rows despite web being our only shipped surface. iOS only shows
+  // the permission prompt for an installed PWA (a bare Safari tab
+  // can't even ask), so gating on isStandalone avoids a prompt that
+  // would just silently fail there anyway. AUTO_PUSH_PROMPT_KEY caps
+  // it to once per browser — if they say no, we don't nag on every
+  // reload; the manual toggle in Settings is still there for anyone
+  // who changes their mind later.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return
+    if (!session?.user) return
+    if (!isStandalone) return
+
+    try {
+      if (localStorage.getItem(AUTO_PUSH_PROMPT_KEY) === '1') return
+    } catch {
+      // Privacy mode etc — just don't persist, fall through and ask anyway.
+    }
+
+    if (webPush.getPermission() !== 'default') return
+
+    webPush.subscribe().finally(() => {
+      try {
+        localStorage.setItem(AUTO_PUSH_PROMPT_KEY, '1')
+      } catch {
+        // ignore
+      }
+    })
+  }, [session, isStandalone])
 
   useEffect(() => {
     if (!initialized) return
