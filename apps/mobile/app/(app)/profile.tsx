@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Picker } from '@react-native-picker/picker';
@@ -530,32 +530,47 @@ export default function ProfileTabScreen() {
             </TouchableOpacity>
 
             {/* Notifications toggle. Only meaningful on web; native
-                builds will get a separate push flow via Expo Push. */}
+                builds will get a separate push flow via Expo Push.
+                A real Switch instead of an Enable/Disable text link —
+                the text link read as just another row label at a
+                glance, easy to skim past; a toggle in the "off"
+                position reads as unfinished setup immediately. */}
             {Platform.OS === 'web' && (
               <View style={styles.modalButton}>
                 <Ionicons name="notifications-outline" size={24} color="#fff" />
-                <View style={{ flex: 1, marginLeft: 16 }}>
+                <View style={{ flex: 1, marginLeft: 16, marginRight: 12 }}>
                   <Text style={styles.modalButtonText}>Notifications</Text>
-                  {!isStandalone && pushPermission !== 'granted' && (
+                  {!isStandalone && pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
                     <Text style={styles.notifHint}>
-                      Add Orbit to your Home Screen for the best experience.
+                      Add Orbit to your Home Screen first — that's required to get notifications.
+                    </Text>
+                  )}
+                  {pushPermission === 'denied' && (
+                    <Text style={styles.notifHint}>
+                      {isStandalone
+                        ? 'Blocked — open your phone\'s Settings app → Notifications → Orbit, and turn Allow Notifications on.'
+                        : 'Blocked — tap the site info/lock icon next to the address bar, then allow notifications for this site.'}
+                    </Text>
+                  )}
+                  {pushPermission === 'unsupported' && (
+                    <Text style={styles.notifHint}>
+                      This browser doesn't support notifications.
                     </Text>
                   )}
                 </View>
                 {pushBusy ? (
                   <ActivityIndicator color="#c084fc" />
                 ) : pushPermission === 'unsupported' ? (
-                  <Text style={styles.notifStatusMuted}>Not supported</Text>
+                  <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
                 ) : pushPermission === 'denied' ? (
-                  <Text style={styles.notifStatusMuted}>Blocked</Text>
-                ) : pushPermission === 'granted' ? (
-                  <TouchableOpacity onPress={handleDisablePush}>
-                    <Text style={styles.notifDisable}>Disable</Text>
-                  </TouchableOpacity>
+                  <Switch value={false} disabled trackColor={{ false: '#374151', true: '#9333ea' }} />
                 ) : (
-                  <TouchableOpacity onPress={handleEnablePush}>
-                    <Text style={styles.notifEnable}>Enable</Text>
-                  </TouchableOpacity>
+                  <Switch
+                    value={pushPermission === 'granted'}
+                    onValueChange={(next) => (next ? handleEnablePush() : handleDisablePush())}
+                    trackColor={{ false: '#374151', true: '#9333ea' }}
+                    thumbColor="#fff"
+                  />
                 )}
               </View>
             )}
@@ -802,9 +817,6 @@ const styles = StyleSheet.create({
   modalCloseButton: { marginTop: 24, alignItems: 'center', paddingVertical: 16, backgroundColor: '#1f2937', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   notifHint: { color: '#9ca3af', fontSize: 11, marginTop: 3, lineHeight: 14 },
-  notifEnable: { color: '#c084fc', fontSize: 14, fontWeight: '700' },
-  notifDisable: { color: '#9ca3af', fontSize: 14, fontWeight: '600' },
-  notifStatusMuted: { color: '#6b7280', fontSize: 13 },
   feedbackInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',
     borderWidth: 1,
