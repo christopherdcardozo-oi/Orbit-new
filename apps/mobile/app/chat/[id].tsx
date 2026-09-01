@@ -13,6 +13,7 @@ import {
   Pressable,
   Animated,
   Easing,
+  AppState,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -552,7 +553,43 @@ export default function ChatScreen() {
         () => { load() }
       )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+
+    // Safety net for realtime dropouts. Reported bug: partner shares
+    // back, the reveal shows up on their own screen (optimistic local
+    // update in submitReveal) but the FIRST person's screen — who's
+    // just sitting in the chat waiting — never updates until they
+    // leave and re-enter. Leaving/re-entering remounts this effect,
+    // which re-subscribes AND re-fetches — meaning the fix works
+    // simply because it re-fetches, not because of anything specific
+    // to navigation. The underlying cause is the WebSocket silently
+    // going stale (phone locks, tab backgrounds, brief network blip,
+    // switching wifi/cellular) without the postgres_changes channel
+    // visibly erroring or auto-recovering in a way that redelivers
+    // the missed event. Rather than chase that at the socket level,
+    // just re-run the same `load()` every time the app/tab regains
+    // focus — cheap, and it makes the exact "reopen it" workaround
+    // happen automatically.
+    const refetchOnResume = () => { load() }
+    if (Platform.OS === 'web') {
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') refetchOnResume()
+      }
+      document.addEventListener('visibilitychange', onVisible)
+      window.addEventListener('focus', onVisible)
+      return () => {
+        supabase.removeChannel(channel)
+        document.removeEventListener('visibilitychange', onVisible)
+        window.removeEventListener('focus', onVisible)
+      }
+    } else {
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') refetchOnResume()
+      })
+      return () => {
+        supabase.removeChannel(channel)
+        sub.remove()
+      }
+    }
   }, [id, userId])
 
   const submitReveal = async () => {
