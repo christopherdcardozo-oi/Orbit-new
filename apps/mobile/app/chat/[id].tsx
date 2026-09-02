@@ -268,6 +268,16 @@ export default function ChatScreen() {
   const typingSentAtRef = useRef(0)
   const partnerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // iOS composer quirk (see onChangeText below): tapping Send blurs the
+  // TextInput, and iOS's predictive-text bar can asynchronously commit
+  // its suggestion for what you just typed — arriving as a SEPARATE
+  // onChangeText AFTER doSend's setInputText(''), re-populating the box
+  // with the word you just sent (often with a trailing space). Short,
+  // common words like "hey"/"hi" are exactly what QuickType confidently
+  // auto-commits, so this shows up there most.
+  const lastSentRef = useRef('')
+  const justSentAtRef = useRef(0)
+
   const [timeLeftStr, setTimeLeftStr] = useState('')
   const [expired, setExpired] = useState(false)
   // secondsLeft is always tracked so the warning banner can decide
@@ -884,6 +894,8 @@ export default function ChatScreen() {
     sendTyping(false)
     setSending(true)
     setInputText('')
+    lastSentRef.current = content
+    justSentAtRef.current = Date.now()
     setPiiWarning(null)
     const { data: inserted, error } = await supabase
       .from('messages')
@@ -1035,6 +1047,131 @@ export default function ChatScreen() {
         )
       })()}
 
+      {/* Contact-reveal banner. Compact summary — full manage UI lives
+          in the modal. Three cases:
+            (a) Nothing shared on either side → prompt to start
+            (b) I've shared, partner hasn't shared anything → waiting
+            (c) At least one match (both shared same type) → show what
+                we can see + hint at any of theirs we haven't
+                reciprocated yet.
+          Lives up here at the top (below header/warning banner, above
+          the message list) rather than pinned above the composer —
+          down there it sat right where new messages land and kept
+          getting in the way while chatting. */}
+      {isActive && (() => {
+        const revealedFromPartner = partnerReveals.filter((r) => r.revealed && r.handle_value)
+        const partnerTypesIHavent = partnerReveals
+          .filter((r) => !r.revealed)
+          .map((r) => r.handle_type)
+        const openManage = () => {
+          setRevealValue('')
+          const usedTypes = new Set(myReveals.map((r) => r.handle_type))
+          const nextUnused = HANDLE_TYPES.find((t) => !usedTypes.has(t.value))
+          setRevealType(nextUnused?.value ?? 'instagram')
+          setRevealError(null)
+          setRevealModalOpen(true)
+        }
+
+        // (a)
+        if (myReveals.length === 0 && partnerReveals.length === 0) {
+          return (
+            <View style={styles.revealBanner}>
+              <Ionicons name="share-social-outline" size={18} color="#c084fc" />
+              <Text style={styles.revealBannerText}>Want to keep chatting past midnight?</Text>
+              <TouchableOpacity style={styles.revealBannerBtn} onPress={openManage}>
+                <Text style={styles.revealBannerBtnText}>Share contact</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        }
+
+        // Little "Edit" pill on the right that reopens the modal —
+        // more obvious than the plain-text "Manage" link that was
+        // easy to miss.
+        const editPill = (
+          <View style={styles.revealEditPill}>
+            <Ionicons name="create-outline" size={12} color="#c084fc" />
+            <Text style={styles.revealEditPillText}>Edit</Text>
+          </View>
+        )
+
+        // Short summary of MY shares — used in states (b) and (c) so
+        // people can see what they entered without having to reopen
+        // the modal.
+        const mineSummary = myReveals.length > 0 && (
+          <Text style={styles.revealBannerMine} numberOfLines={2}>
+            You shared: {myReveals.map((r) => `${handleMeta(r.handle_type).emoji} ${handleMeta(r.handle_type).label}`).join(' · ')}
+          </Text>
+        )
+
+        // (b) I've shared, partner hasn't shared anything at all yet.
+        if (myReveals.length > 0 && partnerReveals.length === 0) {
+          return (
+            <TouchableOpacity style={styles.revealBanner} onPress={openManage} activeOpacity={0.7}>
+              <Ionicons name="time-outline" size={18} color="#c084fc" />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.revealBannerText}>
+                  Waiting for {match.partnerAlias} to share the same type.
+                </Text>
+                {mineSummary}
+              </View>
+              {editPill}
+            </TouchableOpacity>
+          )
+        }
+
+        // (c) At least one side has partial visibility.
+        return (
+          <TouchableOpacity style={styles.revealBanner} onPress={openManage} activeOpacity={0.7}>
+            <Ionicons name="checkmark-circle" size={18} color="#86efac" />
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              {revealedFromPartner.length > 0 ? (
+                revealedFromPartner.map((r) => {
+                  const link = handleLinkFor(r.handle_type, r.handle_value ?? '')
+                  return (
+                    <Text key={r.handle_type} style={styles.revealBannerValueLine} selectable>
+                      <Text style={styles.revealBannerLabel}>
+                        {handleMeta(r.handle_type).emoji} {handleMeta(r.handle_type).label}: {' '}
+                      </Text>
+                      {link ? (
+                        // Nested Text with onPress is the RN-safe way
+                        // to tap through an outer TouchableOpacity — a
+                        // nested Pressable/TouchableOpacity would fight
+                        // the parent for the gesture. The onPress here
+                        // wins because RN dispatches text taps before
+                        // walking back up to the enclosing touchable.
+                        <Text
+                          style={styles.revealBannerValueLink}
+                          onPress={() => openHandle(r.handle_type, r.handle_value ?? '')}
+                          suppressHighlighting={false}
+                        >
+                          {r.handle_value}
+                        </Text>
+                      ) : (
+                        r.handle_value
+                      )}
+                    </Text>
+                  )
+                })
+              ) : (
+                <Text style={styles.revealBannerText}>
+                  Add a matching type to unlock theirs.
+                </Text>
+              )}
+              {mineSummary}
+              {partnerTypesIHavent.length > 0 && (
+                <Text style={styles.revealBannerHint}>
+                  {match.partnerAlias} also shared{' '}
+                  {partnerTypesIHavent.map((t) => handleMeta(t).label).join(', ')}
+                  {' — share yours to unlock.'}
+                </Text>
+              )}
+            </View>
+            {editPill}
+          </TouchableOpacity>
+        )
+      })()}
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1100,127 +1237,6 @@ export default function ChatScreen() {
         />
         </Animated.View>
 
-        {/* Contact-reveal banner. Compact summary — full manage UI lives
-            in the modal. Three cases:
-              (a) Nothing shared on either side → prompt to start
-              (b) I've shared, partner hasn't shared anything → waiting
-              (c) At least one match (both shared same type) → show what
-                  we can see + hint at any of theirs we haven't
-                  reciprocated yet. */}
-        {isActive && (() => {
-          const revealedFromPartner = partnerReveals.filter((r) => r.revealed && r.handle_value)
-          const partnerTypesIHavent = partnerReveals
-            .filter((r) => !r.revealed)
-            .map((r) => r.handle_type)
-          const openManage = () => {
-            setRevealValue('')
-            const usedTypes = new Set(myReveals.map((r) => r.handle_type))
-            const nextUnused = HANDLE_TYPES.find((t) => !usedTypes.has(t.value))
-            setRevealType(nextUnused?.value ?? 'instagram')
-            setRevealError(null)
-            setRevealModalOpen(true)
-          }
-
-          // (a)
-          if (myReveals.length === 0 && partnerReveals.length === 0) {
-            return (
-              <View style={styles.revealBanner}>
-                <Ionicons name="share-social-outline" size={18} color="#c084fc" />
-                <Text style={styles.revealBannerText}>Want to keep chatting past midnight?</Text>
-                <TouchableOpacity style={styles.revealBannerBtn} onPress={openManage}>
-                  <Text style={styles.revealBannerBtnText}>Share contact</Text>
-                </TouchableOpacity>
-              </View>
-            )
-          }
-
-          // Little "Edit" pill on the right that reopens the modal —
-          // more obvious than the plain-text "Manage" link that was
-          // easy to miss.
-          const editPill = (
-            <View style={styles.revealEditPill}>
-              <Ionicons name="create-outline" size={12} color="#c084fc" />
-              <Text style={styles.revealEditPillText}>Edit</Text>
-            </View>
-          )
-
-          // Short summary of MY shares — used in states (b) and (c) so
-          // people can see what they entered without having to reopen
-          // the modal.
-          const mineSummary = myReveals.length > 0 && (
-            <Text style={styles.revealBannerMine} numberOfLines={2}>
-              You shared: {myReveals.map((r) => `${handleMeta(r.handle_type).emoji} ${handleMeta(r.handle_type).label}`).join(' · ')}
-            </Text>
-          )
-
-          // (b) I've shared, partner hasn't shared anything at all yet.
-          if (myReveals.length > 0 && partnerReveals.length === 0) {
-            return (
-              <TouchableOpacity style={styles.revealBanner} onPress={openManage} activeOpacity={0.7}>
-                <Ionicons name="time-outline" size={18} color="#c084fc" />
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.revealBannerText}>
-                    Waiting for {match.partnerAlias} to share the same type.
-                  </Text>
-                  {mineSummary}
-                </View>
-                {editPill}
-              </TouchableOpacity>
-            )
-          }
-
-          // (c) At least one side has partial visibility.
-          return (
-            <TouchableOpacity style={styles.revealBanner} onPress={openManage} activeOpacity={0.7}>
-              <Ionicons name="checkmark-circle" size={18} color="#86efac" />
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                {revealedFromPartner.length > 0 ? (
-                  revealedFromPartner.map((r) => {
-                    const link = handleLinkFor(r.handle_type, r.handle_value ?? '')
-                    return (
-                      <Text key={r.handle_type} style={styles.revealBannerValueLine} selectable>
-                        <Text style={styles.revealBannerLabel}>
-                          {handleMeta(r.handle_type).emoji} {handleMeta(r.handle_type).label}: {' '}
-                        </Text>
-                        {link ? (
-                          // Nested Text with onPress is the RN-safe way
-                          // to tap through an outer TouchableOpacity — a
-                          // nested Pressable/TouchableOpacity would fight
-                          // the parent for the gesture. The onPress here
-                          // wins because RN dispatches text taps before
-                          // walking back up to the enclosing touchable.
-                          <Text
-                            style={styles.revealBannerValueLink}
-                            onPress={() => openHandle(r.handle_type, r.handle_value ?? '')}
-                            suppressHighlighting={false}
-                          >
-                            {r.handle_value}
-                          </Text>
-                        ) : (
-                          r.handle_value
-                        )}
-                      </Text>
-                    )
-                  })
-                ) : (
-                  <Text style={styles.revealBannerText}>
-                    Add a matching type to unlock theirs.
-                  </Text>
-                )}
-                {mineSummary}
-                {partnerTypesIHavent.length > 0 && (
-                  <Text style={styles.revealBannerHint}>
-                    {match.partnerAlias} also shared{' '}
-                    {partnerTypesIHavent.map((t) => handleMeta(t).label).join(', ')}
-                    {' — share yours to unlock.'}
-                  </Text>
-                )}
-              </View>
-              {editPill}
-            </TouchableOpacity>
-          )
-        })()}
-
         {/* Composer */}
         <View style={styles.composer}>
           <TextInput
@@ -1229,13 +1245,25 @@ export default function ChatScreen() {
             placeholderTextColor="#6b7280"
             value={inputText}
             onChangeText={(t) => {
-              // iOS quirk: after doSend clears the composer externally
-              // (setInputText('') isn't a user backspace), UITextView's
-              // leftover autocorrect/predictive-text state sometimes
-              // injects a leading space on the very next keystroke —
-              // visible as every message after the first starting with
-              // a stray space. Strip it; a genuine user-typed leading
-              // space isn't a real message either way.
+              // iOS quirk #1: tapping Send blurs the TextInput, and
+              // iOS's predictive-text bar can asynchronously commit its
+              // suggestion for what was just typed — arriving as a
+              // SEPARATE onChangeText AFTER doSend's setInputText(''),
+              // re-populating the box with the word just sent (often
+              // with a trailing space). Short, common words like
+              // "hey"/"hi" are exactly what gets confidently
+              // auto-committed this way. If the incoming text (trimmed)
+              // matches what we just sent, within a second of sending,
+              // it's that stale echo — discard it instead of letting it
+              // repopulate the box.
+              if (t.trim().length > 0 && t.trim() === lastSentRef.current && Date.now() - justSentAtRef.current < 1000) {
+                setInputText('')
+                return
+              }
+              // iOS quirk #2: same root cause, different shape — a
+              // leading space injected on the very next keystroke after
+              // a programmatic clear. Strip it; a genuine user-typed
+              // leading space isn't a real message either way.
               const next = inputText === '' && t.startsWith(' ') ? t.slice(1) : t
               setInputText(next)
               sendTyping(next.trim().length > 0)

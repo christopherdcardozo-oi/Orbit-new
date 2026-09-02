@@ -78,17 +78,15 @@ export default function ChatTabScreen() {
   // Cleared per-match as they tap up/down/skip; realtime match changes
   // also trigger a re-fetch so newly-expired matches show up right away.
   const [rateableMatches, setRateableMatches] = useState<Array<{ id: string; partnerAlias: string }>>([]);
-  // Two-line community-pulse stat (migration 044; 047 renamed the
-  // per-day message column; 050 added total_users): first line is
-  // yesterday's real activity (active users + messages that day —
-  // these should stay per-day, not cumulative, or "yesterday" stops
-  // meaning anything), second line is the campus's all-time signup
-  // count, which is the number that should visibly grow over time.
-  // Reassurance for the "is anyone actually using this" question that
-  // hits hardest on a small, single-campus pool — not shown pre-login;
-  // see docs discussion for why a raw number is a better fit here than
-  // on the landing page at Orbit's current scale.
-  const [dailyStats, setDailyStats] = useState<{ activeUsers: number; messages: number; totalUsers: number } | null>(null);
+  // Community-pulse stat: campus's all-time signup count (migration
+  // 044 → 050's total_users), the number that visibly grows over time.
+  // Yesterday's active-users/messages breakdown (047) got pulled from
+  // display per request — just the growing total now. Reassurance for
+  // the "is anyone actually using this" question that hits hardest on
+  // a small, single-campus pool — not shown pre-login; see docs
+  // discussion for why a raw number is a better fit here than on the
+  // landing page at Orbit's current scale.
+  const [dailyStats, setDailyStats] = useState<{ totalUsers: number } | null>(null);
   // Match IDs currently showing the "Thanks for rating…" confirmation
   // before silently unmounting. Rating is fired immediately; the card
   // just sticks around a beat so the user sees they were heard.
@@ -261,9 +259,6 @@ export default function ChatTabScreen() {
     if (!dailyStats) return null;
     return (
       <View style={styles.dailyStatsPill}>
-        <Text style={styles.dailyStatsText}>
-          Y'day: {dailyStats.activeUsers} active users · {dailyStats.messages.toLocaleString()} messages
-        </Text>
         <Text style={styles.dailyStatsSubtext}>
           {dailyStats.totalUsers.toLocaleString()} users and counting
         </Text>
@@ -304,13 +299,13 @@ export default function ChatTabScreen() {
 
         const { data: stats } = await supabase
           .from('campus_daily_stats')
-          .select('active_users, messages, total_users')
+          .select('total_users')
           .eq('campus_domain', profile.email_domain)
           .order('stat_date', { ascending: false })
           .limit(1)
           .maybeSingle();
         if (stats) {
-          setDailyStats({ activeUsers: stats.active_users, messages: stats.messages, totalUsers: stats.total_users });
+          setDailyStats({ totalUsers: stats.total_users });
         }
       }
 
