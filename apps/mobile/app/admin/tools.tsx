@@ -3,8 +3,8 @@
 // Both call SECURITY DEFINER RPCs (migrations 041/042) that hand-check
 // admin_users authorization + campus scope internally.
 
-import { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Pressable, Modal, ScrollView } from 'react-native';
+import { useState, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Pressable, Modal, ScrollView, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -66,10 +66,68 @@ function UserPicker({ label, picked, onPick }: { label: string; picked: SearchRo
   );
 }
 
+type University = { email_domain: string; university_name: string; timezone: string | null; is_active: boolean };
+
 export default function AdminTools() {
   const router = useRouter();
   const scope = useAdminScope();
   const campusOptions = useCampusOptions(scope.adminCampuses);
+
+  // ---------- Campuses (migration 045) — global admins only (adding
+  // or retiring an entire campus is a platform-level decision, not
+  // something a single-campus moderator should be able to do even
+  // once that role exists; RLS enforces this server-side too, this
+  // client check just avoids showing controls that would 403). ----------
+  const isGlobalAdmin = scope.isAdmin && scope.adminCampuses === null;
+  const [universities, setUniversities] = useState<University[]>([]);
+  const [universitiesLoading, setUniversitiesLoading] = useState(true);
+  const [newDomain, setNewDomain] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newTimezone, setNewTimezone] = useState('America/Chicago');
+  const [addCampusBusy, setAddCampusBusy] = useState(false);
+  const [addCampusError, setAddCampusError] = useState<string | null>(null);
+  const [campusToggleBusy, setCampusToggleBusy] = useState<string | null>(null);
+
+  const loadUniversities = useCallback(async () => {
+    setUniversitiesLoading(true);
+    const { data } = await supabase
+      .from('university_config')
+      .select('email_domain, university_name, timezone, is_active')
+      .order('university_name');
+    setUniversities((data ?? []) as University[]);
+    setUniversitiesLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (isGlobalAdmin) loadUniversities();
+  }, [isGlobalAdmin, loadUniversities]);
+
+  const addCampus = async () => {
+    const domain = newDomain.trim().toLowerCase();
+    const name = newName.trim();
+    const tz = newTimezone.trim() || 'America/Chicago';
+    if (!domain || !name) return;
+    setAddCampusBusy(true);
+    setAddCampusError(null);
+    const { error } = await supabase
+      .from('university_config')
+      .insert({ email_domain: domain, university_name: name, timezone: tz, is_active: true });
+    setAddCampusBusy(false);
+    if (error) { setAddCampusError(error.message); return; }
+    setNewDomain(''); setNewName(''); setNewTimezone('America/Chicago');
+    loadUniversities();
+  };
+
+  const toggleCampusActive = async (domain: string, next: boolean) => {
+    setCampusToggleBusy(domain);
+    const { error } = await supabase
+      .from('university_config')
+      .update({ is_active: next })
+      .eq('email_domain', domain);
+    setCampusToggleBusy(null);
+    if (error) { setAddCampusError(error.message); return; }
+    setUniversities((prev) => prev.map((u) => (u.email_domain === domain ? { ...u, is_active: next } : u)));
+  };
 
   // ---------- Manual match ----------
   const [user1, setUser1] = useState<SearchRow | null>(null);
@@ -152,6 +210,79 @@ export default function AdminTools() {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent}>
+        {/* ---------- Campuses (global admins only) ---------- */}
+        {isGlobalAdmin && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Campuses</Text>
+            <Text style={styles.sectionHint}>
+              Add new campuses and turn signups on/off. Only active campuses accept new signups, appear in filters, and get matched nightly.
+            </Text>
+
+            {universitiesLoading ? (
+              <ActivityIndicator color="#9333ea" style={{ marginVertical: 8 }} />
+            ) : (
+              universities.map((u) => (
+                <View key={u.email_domain} style={styles.campusRow}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={styles.campusName}>{u.university_name}</Text>
+                    <Text style={styles.campusMeta}>{u.email_domain} · {u.timezone}</Text>
+                  </View>
+                  {campusToggleBusy === u.email_domain ? (
+                    <ActivityIndicator size="small" color="#9333ea" />
+                  ) : (
+                    <Switch
+                      value={u.is_active}
+                      onValueChange={(v) => toggleCampusActive(u.email_domain, v)}
+                      trackColor={{ false: '#374151', true: '#16a34a' }}
+                      thumbColor="#fff"
+                    />
+                  )}
+                </View>
+              ))
+            )}
+
+            <Text style={[styles.pickerLabel, { marginTop: 16 }]}>Add a campus</Text>
+            <TextInput
+              style={styles.pickerInput}
+              placeholder="Campus name (e.g. University of Iowa)"
+              placeholderTextColor="#6b7280"
+              value={newName}
+              onChangeText={setNewName}
+            />
+            <TextInput
+              style={[styles.pickerInput, { marginTop: 8 }]}
+              placeholder="Email domain (e.g. uiowa.edu)"
+              placeholderTextColor="#6b7280"
+              value={newDomain}
+              onChangeText={setNewDomain}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={[styles.pickerInput, { marginTop: 8 }]}
+              placeholder="Timezone (e.g. America/Chicago)"
+              placeholderTextColor="#6b7280"
+              value={newTimezone}
+              onChangeText={setNewTimezone}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {addCampusError && <Text style={styles.errorText}>{addCampusError}</Text>}
+            <TouchableOpacity
+              style={[styles.primaryButton, (!newDomain.trim() || !newName.trim() || addCampusBusy) && { opacity: 0.4 }]}
+              onPress={addCampus}
+              disabled={!newDomain.trim() || !newName.trim() || addCampusBusy}
+            >
+              {addCampusBusy ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                  <Text style={styles.primaryButtonText}>Add Campus</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ---------- Schedule match ---------- */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Schedule Match</Text>
@@ -322,6 +453,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(147, 51, 234, 0.12)', borderWidth: 1, borderColor: '#9333ea',
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
   },
+  campusRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#030712', borderRadius: 10, borderWidth: 1, borderColor: '#1f2937',
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8,
+  },
+  campusName: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  campusMeta: { color: '#6b7280', fontSize: 11, marginTop: 2 },
   pickedText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   pickerResultRow: {
     backgroundColor: '#030712', borderRadius: 8, padding: 10, marginTop: 6,
