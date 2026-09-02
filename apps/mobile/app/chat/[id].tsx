@@ -211,6 +211,37 @@ type MatchInfo = {
   partnerActivities: string[] | null
 }
 
+// Three-dot "typing…" bubble, styled like an incoming message and
+// placed where the real one will land (FlatList footer, since
+// messages render oldest-first). Owns its own staggered pulse loop —
+// mounted/unmounted by the parent's partnerTyping flag, so the
+// animation always restarts clean each time it appears.
+function TypingDots() {
+  const d1 = useRef(new Animated.Value(0.3)).current
+  const d2 = useRef(new Animated.Value(0.3)).current
+  const d3 = useRef(new Animated.Value(0.3)).current
+  useEffect(() => {
+    const pulse = (val: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.timing(val, { toValue: 0.3, duration: 350, useNativeDriver: true }),
+        ])
+      )
+    const loops = [pulse(d1, 0), pulse(d2, 150), pulse(d3, 300)]
+    loops.forEach((l) => l.start())
+    return () => loops.forEach((l) => l.stop())
+  }, [d1, d2, d3])
+  return (
+    <View style={{ flexDirection: 'row', gap: 4 }}>
+      <Animated.View style={[styles.typingDot, { opacity: d1 }]} />
+      <Animated.View style={[styles.typingDot, { opacity: d2 }]} />
+      <Animated.View style={[styles.typingDot, { opacity: d3 }]} />
+    </View>
+  )
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
@@ -363,6 +394,50 @@ export default function ChatScreen() {
 
     load()
   }, [id])
+
+  // Presence: keep profiles.active_match_id pointed at this chat while
+  // it's actually on-screen and foregrounded, so notify_new_message_push
+  // (migration 053) can skip the redundant push for "every message
+  // pings me even though I'm staring at the chat right now." Cleared
+  // on background/hidden (not just unmount) — a backgrounded app still
+  // needs the push, since the user can't see the screen. The eq()
+  // guard on clear avoids a stale cleanup clobbering a newer chat's
+  // flag if effects run out of order across a fast navigation.
+  useEffect(() => {
+    if (!userId || !id) return
+
+    const setActive = () => {
+      supabase.from('profiles').update({ active_match_id: id }).eq('id', userId).then()
+    }
+    const clearActive = () => {
+      supabase.from('profiles').update({ active_match_id: null }).eq('id', userId).eq('active_match_id', id).then()
+    }
+
+    setActive()
+
+    if (Platform.OS === 'web') {
+      const onVisibility = () => {
+        if (document.visibilityState === 'visible') setActive()
+        else clearActive()
+      }
+      document.addEventListener('visibilitychange', onVisibility)
+      window.addEventListener('beforeunload', clearActive)
+      return () => {
+        clearActive()
+        document.removeEventListener('visibilitychange', onVisibility)
+        window.removeEventListener('beforeunload', clearActive)
+      }
+    } else {
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') setActive()
+        else clearActive()
+      })
+      return () => {
+        clearActive()
+        sub.remove()
+      }
+    }
+  }, [userId, id])
 
   // ---------- Realtime: new messages ----------
 
@@ -1013,6 +1088,15 @@ export default function ChatScreen() {
               </View>
             )
           }}
+          ListFooterComponent={
+            partnerTyping ? (
+              <View style={[styles.bubbleRow, styles.bubbleRowTheirs]}>
+                <View style={[styles.bubble, styles.bubbleTheirs, styles.typingBubble]}>
+                  <TypingDots />
+                </View>
+              </View>
+            ) : null
+          }
         />
         </Animated.View>
 
@@ -1555,6 +1639,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     marginTop: 1,
+  },
+  typingBubble: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  typingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#e9d5ff',
   },
   warningBanner: {
     flexDirection: 'row',
