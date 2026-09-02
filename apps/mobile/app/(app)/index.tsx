@@ -78,13 +78,13 @@ export default function ChatTabScreen() {
   // Cleared per-match as they tap up/down/skip; realtime match changes
   // also trigger a re-fetch so newly-expired matches show up right away.
   const [rateableMatches, setRateableMatches] = useState<Array<{ id: string; partnerAlias: string }>>([]);
-  // "X active yesterday · X conversations yesterday" — a once-a-day
-  // community-pulse stat (migration 044). Reassurance for the "is
-  // anyone actually using this" question that hits hardest on a small,
-  // single-campus pool — not shown pre-login; see docs discussion for
-  // why a raw number is a better fit here than on the landing page at
-  // Orbit's current scale.
-  const [dailyStats, setDailyStats] = useState<{ activeUsers: number; conversations: number } | null>(null);
+  // "X active yesterday · X messages yesterday" — a once-a-day
+  // community-pulse stat (migration 044, column renamed in 047).
+  // Reassurance for the "is anyone actually using this" question that
+  // hits hardest on a small, single-campus pool — not shown pre-login;
+  // see docs discussion for why a raw number is a better fit here than
+  // on the landing page at Orbit's current scale.
+  const [dailyStats, setDailyStats] = useState<{ activeUsers: number; messages: number } | null>(null);
   // Match IDs currently showing the "Thanks for rating…" confirmation
   // before silently unmounting. Rating is fired immediately; the card
   // just sticks around a beat so the user sees they were heard.
@@ -258,7 +258,7 @@ export default function ChatTabScreen() {
     return (
       <View style={styles.dailyStatsPill}>
         <Text style={styles.dailyStatsText}>
-          {dailyStats.activeUsers} active yesterday · {dailyStats.conversations} conversation{dailyStats.conversations === 1 ? '' : 's'}
+          {dailyStats.activeUsers} active yesterday · {dailyStats.messages} message{dailyStats.messages === 1 ? '' : 's'}
         </Text>
       </View>
     );
@@ -297,12 +297,12 @@ export default function ChatTabScreen() {
 
         const { data: stats } = await supabase
           .from('campus_daily_stats')
-          .select('active_users, conversations')
+          .select('active_users, messages')
           .eq('campus_domain', profile.email_domain)
           .order('stat_date', { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (stats) setDailyStats({ activeUsers: stats.active_users, conversations: stats.conversations });
+        if (stats) setDailyStats({ activeUsers: stats.active_users, messages: stats.messages });
       }
 
       await fetchActiveMatch(user.id);
