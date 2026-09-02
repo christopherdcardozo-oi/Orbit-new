@@ -506,12 +506,48 @@ async function runMatchmakingForCampus(
     blockedSet.add([b.blocker_id, b.blocked_id].sort().join('_'));
   }
 
-  // Shuffled so tie-breaking (equal scores, or nobody has any signal in
-  // common) still feels random. Within that shuffle order, each unmatched
-  // user picks the highest-scoring still-available, not-recently-matched
-  // partner — greedy, not a global optimum, but means people with real
-  // overlap (personality/hobbies) reliably find each other.
-  const shuffled = fisherYatesShuffle(eligibleProfiles);
+  // Priority order for the greedy pass below. The greedy algorithm is
+  // order-sensitive — whoever comes first gets to pick their best
+  // available partner while the full pool is still open; whoever comes
+  // last gets whatever's left (or nobody). Two tiers, each shuffled
+  // internally for random tie-breaking:
+  //   1. Never-matched users (zero match_history rows, ever) — so a
+  //      brand-new signup reliably gets matched promptly instead of
+  //      landing at the back of the line with zero activity to their
+  //      name.
+  //   2. Everyone else, ranked by messages sent in the trailing 14
+  //      days (most active first) — rewards people actually using the
+  //      app with first pick of the best-compatibility partner.
+  // history/oldHistory (fetched above) together cover the ENTIRE
+  // match_history table unscoped by date (history >= 30 days ago,
+  // oldHistory <= 14 days ago — their ranges overlap and union to
+  // "all time"), so no extra query is needed to know who's ever matched.
+  const everMatchedIds = new Set<string>();
+  for (const h of [...(history ?? []), ...(oldHistory ?? [])]) {
+    everMatchedIds.add(h.user1_id);
+    everMatchedIds.add(h.user2_id);
+  }
+
+  const fourteenDaysAgoActivity = new Date();
+  fourteenDaysAgoActivity.setDate(fourteenDaysAgoActivity.getDate() - 14);
+  const { data: recentMessages } = await supabase
+    .from('messages')
+    .select('sender_id')
+    .in('sender_id', domainProfileIds)
+    .gte('created_at', fourteenDaysAgoActivity.toISOString());
+
+  const activityCount = new Map<string, number>();
+  for (const m of recentMessages ?? []) {
+    activityCount.set(m.sender_id, (activityCount.get(m.sender_id) ?? 0) + 1);
+  }
+
+  const neverMatched = fisherYatesShuffle(eligibleProfiles.filter((p) => !everMatchedIds.has(p.id)));
+  const everyoneElse = fisherYatesShuffle(eligibleProfiles.filter((p) => everMatchedIds.has(p.id)));
+  // Array.prototype.sort is stable (guaranteed since ES2019), so ties
+  // (equal or zero activity) keep the random order from the shuffle
+  // above rather than silently reverting to insertion order.
+  everyoneElse.sort((a, b) => (activityCount.get(b.id) ?? 0) - (activityCount.get(a.id) ?? 0));
+  const shuffled = [...neverMatched, ...everyoneElse];
   const matched = new Set<string>();
 
   const newMatches: Array<{
