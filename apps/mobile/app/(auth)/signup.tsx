@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { Picker } from '@react-native-picker/picker'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
+import SpamHint from '../../components/SpamHint'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
 import { HOBBIES, ACTIVITIES } from '../../lib/interests'
 import { useActiveUniversities } from '../../lib/universities'
@@ -247,6 +248,7 @@ export default function SignupScreen() {
                 {step === 'code' && 'Enter the 8-digit code sent to your email'}
                 {step === 'personality' && 'A few quick questions for better matches'}
               </Text>
+              {step === 'code' && <SpamHint />}
             </>
           )}
 

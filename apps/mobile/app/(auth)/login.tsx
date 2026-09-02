@@ -1,26 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native'
 import { Link, useRouter } from 'expo-router'
 import { Picker } from '@react-native-picker/picker'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { useActiveUniversities } from '../../lib/universities'
 
 import CosmicBackground from '../../components/CosmicBackground'
+import SpamHint from '../../components/SpamHint'
 
 export default function LoginScreen() {
   const router = useRouter()
   const { universities, loading: universitiesLoading } = useActiveUniversities()
+  // Starts unselected — auto-defaulting to whichever campus loads first
+  // (alphabetically Coastal Carolina, ahead of Iowa State) meant most
+  // people never looked at the picker at all and could pick the wrong
+  // campus without noticing. Left blank until they explicitly choose.
   const [selectedUniversity, setSelectedUniversity] = useState('')
   const [fullEmail, setFullEmail] = useState('')
   const [loading, setLoading] = useState(false)
-
-  // Default to the first active campus once the list loads. If a second
-  // campus goes active later, the Picker below lets people actually choose.
-  useEffect(() => {
-    if (!selectedUniversity && universities.length > 0) {
-      setSelectedUniversity(universities[0].email_domain)
-    }
-  }, [universities, selectedUniversity])
 
   // Inline error state instead of alert()/window.alert(): alert() is
   // browser-native on web (easy to miss, blocked by some automation/
@@ -38,6 +36,11 @@ export default function LoginScreen() {
   const handleSendCode = async () => {
     setErrorMessage('')
     setNoAccountFound(false)
+
+    if (!selectedUniversity) {
+      setErrorMessage('Please select your university.')
+      return
+    }
 
     if (!fullEmail) {
       setErrorMessage('Please enter your email.')
@@ -130,6 +133,7 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>
           {otpPhase ? 'Enter the 8-digit code sent to your email' : 'Select your campus and enter your email'}
         </Text>
+        {otpPhase && <SpamHint />}
 
         {!otpPhase ? (
           <>
@@ -148,11 +152,21 @@ export default function LoginScreen() {
                   ) : universities.length === 0 ? (
                     <Picker.Item label="No campuses available" value="" />
                   ) : (
-                    universities.map((u) => (
-                      <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
-                    ))
+                    <>
+                      <Picker.Item label="— Select your university —" value="" />
+                      {universities.map((u) => (
+                        <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
+                      ))}
+                    </>
                   )}
                 </Picker>
+                <Ionicons
+                  name="chevron-down"
+                  size={18}
+                  color="#9ca3af"
+                  style={styles.pickerCaret}
+                  pointerEvents="none"
+                />
               </View>
             </View>
 
@@ -304,6 +318,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#374151',
     overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  // Native Picker already shows its own affordance (wheel/menu on tap);
+  // this caret is mainly for web, where Picker renders as a plain
+  // <select> with no visual cue that it's a dropdown at all.
+  pickerCaret: {
+    position: 'absolute',
+    right: 14,
+    top: '50%',
+    marginTop: -9,
   },
   // On web, Picker renders as a plain <select>: it needs an explicit
   // height + fontSize to match TextInput's box, and borderWidth: 0 so
@@ -314,7 +339,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     color: '#fff',
     ...(Platform.OS === 'web'
-      ? { height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0 }
+      ? {
+          height: 48,
+          paddingHorizontal: 16,
+          // Room on the right so text never runs under our custom caret.
+          paddingRight: 36,
+          fontSize: 16,
+          borderWidth: 0,
+          // Web's <select> ships its own arrow — hide it so our custom
+          // pickerCaret icon doesn't double up with the browser's.
+          appearance: 'none',
+          WebkitAppearance: 'none',
+        }
       : {}),
   },
   pickerItem: {
