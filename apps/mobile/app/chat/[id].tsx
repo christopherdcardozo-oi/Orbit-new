@@ -1768,8 +1768,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   bubble: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    // Fixed horizontal padding reads fine on longer messages but is a
+    // much bigger fraction of a short bubble ("hi", "hello") — looked
+    // like a leading space that wasn't actually there. Tightened
+    // uniformly rather than varying padding by message length, which
+    // would make bubbles in the same thread look inconsistent.
+    paddingHorizontal: 11,
     borderRadius: 18,
   },
   bubbleMine: {
