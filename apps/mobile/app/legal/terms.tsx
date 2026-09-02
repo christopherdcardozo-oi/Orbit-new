@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 
-const LAST_UPDATED = 'August 30, 2026'
+const LAST_UPDATED = 'September 1, 2026'
 const CONTACT_EMAIL = 'support@orbit.orghubs.com'
 
 export default function TermsScreen() {
@@ -101,6 +101,12 @@ export default function TermsScreen() {
             Report abuse to {CONTACT_EMAIL}. Include the alias of the person and,
             if you can, when the message was sent — we can look up the underlying
             account from that.
+          </Bullet>
+          <Bullet>
+            To investigate a report or respond to feedback, Orbit's administrators
+            (currently the two people who run the service) can read the account,
+            match, and message data involved — see the Privacy Policy for exactly
+            what that covers. This access exists only for that purpose.
           </Bullet>
           <Bullet>
             We can suspend or permanently ban any account that breaks these

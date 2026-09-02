@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 
-const LAST_UPDATED = 'August 30, 2026'
+const LAST_UPDATED = 'September 1, 2026'
 const CONTACT_EMAIL = 'support@orbit.orghubs.com'
 
 export default function PrivacyScreen() {
@@ -67,6 +67,13 @@ export default function PrivacyScreen() {
             see the conversation history for the length of that match.
           </Bullet>
           <Bullet>
+            <B>Contact info you choose to share.</B> Orbit has an optional in-chat
+            "Share contact" feature (Instagram, Snapchat, phone, or email) that only
+            unlocks once both you and your match have each shared the same type —
+            it's revealed to your match, and to no one else, and it's stored tied
+            to that match so you can both see what was shared.
+          </Bullet>
+          <Bullet>
             <B>A push-notification token,</B> if you enable notifications, so we can
             let you know when you're matched or receive a message.
           </Bullet>
@@ -100,16 +107,26 @@ export default function PrivacyScreen() {
         <Section title="Who can see what">
           <Bullet>
             Your <B>display alias, avatar, major, and year</B> are visible to your
-            current match (only). Nobody else — not other users, not other
-            campuses.
+            current match (only). No other regular user can see them — not other
+            students, not other campuses.
           </Bullet>
           <Bullet>
             Your <B>email, personality answers, and message history</B> are never
-            shown to any other user.
+            shown to any other student.
           </Bullet>
           <Bullet>
-            Only you can read your own account data via the app; the database
-            enforces this at the row level (Supabase RLS).
+            <B>Orbit's administrators</B> (currently the two people who run the
+            service) can access account, match, message, and report data for
+            students on the campus(es) they administer — solely to investigate
+            abuse reports, respond to feedback, and enforce the Terms of Service.
+            This is the one exception to the above; it's a small, named team, not
+            a general audience, and this access exists only to keep the app safe
+            to use.
+          </Bullet>
+          <Bullet>
+            Outside of that admin access, only you can read your own account data
+            via the app; the database enforces this at the row level (Supabase
+            RLS).
           </Bullet>
         </Section>
 
@@ -119,14 +136,14 @@ export default function PrivacyScreen() {
             match expires, the connection is closed and cannot be resumed.
           </Bullet>
           <Bullet>
-            <B>Old messages</B> from expired matches remain in the database only
-            long enough for us to operate the service (abuse reports, backups) and
-            are otherwise not surfaced anywhere in the app.
+            <B>Old messages and shared contact info</B> from expired matches remain
+            in the database only long enough for us to operate the service (abuse
+            reports, backups) and are otherwise not surfaced anywhere in the app.
           </Bullet>
           <Bullet>
             <B>Your profile</B> stays as long as your account exists. Deleting your
             account (Settings → Delete Account) permanently erases your profile,
-            matches, and messages.
+            matches, messages, and any contact info you'd shared.
           </Bullet>
         </Section>
 

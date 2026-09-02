@@ -130,7 +130,7 @@ export default function LoginScreen() {
           accessibilityLabel="Orbit"
         />
         <Text style={styles.title}>Welcome Back 🚀</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.subtitle, otpPhase && styles.subtitleWithHint]}>
           {otpPhase ? 'Enter the 8-digit code sent to your email' : 'Select your campus and enter your email'}
         </Text>
         {otpPhase && <SpamHint />}
@@ -297,6 +297,14 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
     marginBottom: 32,
+  },
+  // Tighter gap when SpamHint immediately follows — the 32px above is
+  // meant to separate the subtitle from the form below it, but with
+  // the hint in between it just pushed the hint away from the subtitle
+  // it's supposed to read as part of. SpamHint's own marginBottom
+  // carries the spacing before the form instead.
+  subtitleWithHint: {
+    marginBottom: 4,
   },
   inputGroup: {
     marginBottom: 20,

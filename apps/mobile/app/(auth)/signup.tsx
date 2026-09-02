@@ -254,7 +254,7 @@ export default function SignupScreen() {
           {step !== 'reveal' && (
             <>
               <Text style={styles.title}>Join Orbit ✨</Text>
-              <Text style={styles.subtitle}>
+              <Text style={[styles.subtitle, step === 'code' && styles.subtitleWithHint]}>
                 {step === 'details' && 'Tell us about yourself to begin'}
                 {step === 'code' && 'Enter the 8-digit code sent to your email'}
                 {step === 'personality' && 'A few quick questions for better matches'}
@@ -561,6 +561,11 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
     marginBottom: 32,
+  },
+  // Tighter gap when SpamHint immediately follows (code step) — see
+  // matching comment in app/(auth)/login.tsx.
+  subtitleWithHint: {
+    marginBottom: 4,
   },
   inputGroup: {
     marginBottom: 16,
