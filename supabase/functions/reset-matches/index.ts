@@ -15,9 +15,10 @@
 //      015_instant_topup_on_signup.sql — tied to their personality
 //      answers being saved, not raw account creation, so nobody gets
 //      matched on a still-blank profile). Tries to pair just that one
-//      campus's currently-unmatched active users, right now — unless
-//      it's within 2 hours of that campus's next reset, in which case
-//      it skips (not enough time left to make a new match worth it).
+//      campus's currently-unmatched active users, right now — no matter
+//      how close it is to that campus's next reset (a short-lived match
+//      is still better than none; a previous guard used to skip this
+//      within the last 2 hours before reset, removed by request).
 //      Never resets anyone — only the cron does that.
 //
 // This design replaces an earlier one where a single once-a-day UTC cron
@@ -310,7 +311,6 @@ function generateIcebreaker(a: Profile, b: Profile): string {
 // ---------- Per-campus matchmaking ----------
 
 const RESET_WINDOW_SECONDS = 15 * 60; // matches the cron's 15-minute tick
-const SKIP_WINDOW_SECONDS = 2 * 60 * 60; // don't start new matches this close to reset
 
 // Two call sites, two different jobs — never both at once:
 //   cron tick        → { allowReset: true,  allowTopup: false }
@@ -320,9 +320,11 @@ const SKIP_WINDOW_SECONDS = 2 * 60 * 60; // don't start new matches this close t
 //     instead of being polled for here (see migration 015).
 //   onboarding trigger → { allowReset: false, allowTopup: true }
 //     Fires once, right when a specific user finishes signup. Tries to
-//     top-up-match just that campus, right now, unless it's within
-//     SKIP_WINDOW_SECONDS of that campus's next reset. Never triggers a
-//     mass reset — only the cron does that.
+//     top-up-match just that campus, right now — no matter how close to
+//     that campus's next reset (a previous SKIP_WINDOW_SECONDS guard
+//     used to skip this within the last 2 hours before reset; removed
+//     by request — a short-lived match is still better than none).
+//     Never triggers a mass reset — only the cron does that.
 async function runMatchmakingForCampus(
   supabase: SupabaseClient,
   university: UniversityConfig,
@@ -371,12 +373,9 @@ async function runMatchmakingForCampus(
     // event-driven now.
     result.mode = 'skipped';
     return result;
-  } else if (secondsUntilMidnight <= SKIP_WINDOW_SECONDS) {
-    // Onboarding trigger, but too close to this campus's reset to bother
-    // starting a new match that would just get expired shortly after.
-    result.mode = 'skipped';
-    return result;
   } else {
+    // Onboarding trigger — top-up-match right now regardless of how
+    // close it is to this campus's next reset.
     result.mode = 'topup';
   }
 
