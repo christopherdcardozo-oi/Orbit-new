@@ -78,16 +78,17 @@ export default function ChatTabScreen() {
   // Cleared per-match as they tap up/down/skip; realtime match changes
   // also trigger a re-fetch so newly-expired matches show up right away.
   const [rateableMatches, setRateableMatches] = useState<Array<{ id: string; partnerAlias: string }>>([]);
-  // "X active yesterday · X messages sent" — a once-a-day
-  // community-pulse stat (migration 044; 047 renamed the per-day column,
-  // 049 added the all-time running total shown here — a cumulative
-  // number reads as real traction where yesterday's count alone looks
-  // small and noisy day to day). Reassurance for the "is anyone
-  // actually using this" question that hits hardest on a small,
-  // single-campus pool — not shown pre-login; see docs discussion for
-  // why a raw number is a better fit here than on the landing page at
-  // Orbit's current scale.
-  const [dailyStats, setDailyStats] = useState<{ activeUsers: number; totalMessages: number } | null>(null);
+  // Two-line community-pulse stat (migration 044; 047 renamed the
+  // per-day message column; 050 added total_users): first line is
+  // yesterday's real activity (active users + messages that day —
+  // these should stay per-day, not cumulative, or "yesterday" stops
+  // meaning anything), second line is the campus's all-time signup
+  // count, which is the number that should visibly grow over time.
+  // Reassurance for the "is anyone actually using this" question that
+  // hits hardest on a small, single-campus pool — not shown pre-login;
+  // see docs discussion for why a raw number is a better fit here than
+  // on the landing page at Orbit's current scale.
+  const [dailyStats, setDailyStats] = useState<{ activeUsers: number; messages: number; totalUsers: number } | null>(null);
   // Match IDs currently showing the "Thanks for rating…" confirmation
   // before silently unmounting. Rating is fired immediately; the card
   // just sticks around a beat so the user sees they were heard.
@@ -261,7 +262,10 @@ export default function ChatTabScreen() {
     return (
       <View style={styles.dailyStatsPill}>
         <Text style={styles.dailyStatsText}>
-          {dailyStats.activeUsers} active yesterday · {dailyStats.totalMessages.toLocaleString()} messages sent
+          Yesterday: {dailyStats.activeUsers} active users · {dailyStats.messages.toLocaleString()} messages
+        </Text>
+        <Text style={styles.dailyStatsSubtext}>
+          {dailyStats.totalUsers.toLocaleString()} users and counting
         </Text>
       </View>
     );
@@ -300,12 +304,14 @@ export default function ChatTabScreen() {
 
         const { data: stats } = await supabase
           .from('campus_daily_stats')
-          .select('active_users, total_messages')
+          .select('active_users, messages, total_users')
           .eq('campus_domain', profile.email_domain)
           .order('stat_date', { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (stats) setDailyStats({ activeUsers: stats.active_users, totalMessages: stats.total_messages });
+        if (stats) {
+          setDailyStats({ activeUsers: stats.active_users, messages: stats.messages, totalUsers: stats.total_users });
+        }
       }
 
       await fetchActiveMatch(user.id);
@@ -942,9 +948,10 @@ const styles = StyleSheet.create({
   dailyStatsPill: {
     marginTop: 14,
     alignSelf: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 999,
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
     backgroundColor: 'rgba(168, 85, 247, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(168, 85, 247, 0.2)',
@@ -953,5 +960,11 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     fontSize: 12,
     fontWeight: '600',
+  },
+  dailyStatsSubtext: {
+    color: '#c084fc',
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
   },
 });
