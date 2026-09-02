@@ -332,7 +332,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 10,
     backgroundColor: '#111827', borderRadius: 12, borderWidth: 1, borderColor: '#374151',
   },
-  searchInput: { flex: 1, color: '#fff', fontSize: 15 },
+  // fontSize must stay >= 16 on web — anything smaller triggers iOS
+  // Safari's forced zoom-on-focus (same bug class already fixed in the
+  // chat composer, report box, and profile text fields).
+  searchInput: { flex: 1, color: '#fff', fontSize: 16 },
   // Explicit flex:1 on the FlatList itself (not just contentContainerStyle)
   // is what actually bounds it to the remaining screen space on web —
   // without it the list grows to fit its content and the whole PAGE
@@ -379,9 +382,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#dc2626',
   },
   deleteConfirmLabel: { color: '#d1d5db', fontSize: 13, marginTop: 16, marginBottom: 8, textAlign: 'center' },
+  // fontSize >= 16 — see the matching comment on searchInput above.
   deleteConfirmInput: {
     backgroundColor: '#030712', borderWidth: 1, borderColor: '#374151', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 15, textAlign: 'center',
+    paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 16, textAlign: 'center',
   },
   modalCloseButton: { marginTop: 20, alignItems: 'center', paddingVertical: 16, backgroundColor: '#1f2937', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },

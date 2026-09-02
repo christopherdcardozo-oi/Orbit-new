@@ -751,9 +751,12 @@ const styles = StyleSheet.create({
   sectionHint: { color: '#6b7280', fontSize: 12, lineHeight: 17, marginBottom: 12 },
   pickerWrap: { marginBottom: 12 },
   pickerLabel: { color: '#9ca3af', fontSize: 12, fontWeight: '600', marginBottom: 6 },
+  // fontSize >= 16 — anything smaller triggers iOS Safari's forced
+  // zoom-on-focus (same bug class already fixed in the chat composer,
+  // report box, and profile text fields).
   pickerInput: {
     backgroundColor: '#030712', borderWidth: 1, borderColor: '#374151', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 14,
+    paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 16,
   },
   pickedRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -817,9 +820,10 @@ const styles = StyleSheet.create({
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
   modalSubtitle: { color: '#9ca3af', fontSize: 13, textAlign: 'center', marginTop: 6 },
   deleteConfirmLabel: { color: '#d1d5db', fontSize: 13, marginTop: 16, marginBottom: 8, textAlign: 'center' },
+  // fontSize >= 16 — see the matching comment on pickerInput above.
   deleteConfirmInput: {
     backgroundColor: '#030712', borderWidth: 1, borderColor: '#374151', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 15, textAlign: 'center',
+    paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 16, textAlign: 'center',
   },
   modalCloseButton: { marginTop: 12, alignItems: 'center', paddingVertical: 14, backgroundColor: '#1f2937', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
