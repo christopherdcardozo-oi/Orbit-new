@@ -262,7 +262,7 @@ export default function ChatTabScreen() {
     return (
       <View style={styles.dailyStatsPill}>
         <Text style={styles.dailyStatsText}>
-          Yesterday: {dailyStats.activeUsers} active users · {dailyStats.messages.toLocaleString()} messages
+          Y'day: {dailyStats.activeUsers} active users · {dailyStats.messages.toLocaleString()} messages
         </Text>
         <Text style={styles.dailyStatsSubtext}>
           {dailyStats.totalUsers.toLocaleString()} users and counting
