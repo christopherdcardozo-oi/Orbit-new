@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { Link, useRouter, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { Picker } from '@react-native-picker/picker'
-import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 import SpamHint from '../../components/SpamHint'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
@@ -24,13 +24,20 @@ export default function SignupScreen() {
   const [selectedUniversity, setSelectedUniversity] = useState('')
   const [fullEmail, setFullEmail] = useState('')
 
-  // Default to the invited campus (if valid) or the first active campus.
+  // Only auto-selects from a valid Invite-a-Friend link (?campus=...) —
+  // an intentional default since it's literally what the friend invited
+  // them to. With no invite param this used to fall back to
+  // universities[0], which silently defaulted everyone to whichever
+  // campus sorts first alphabetically (Coastal Carolina, ahead of Iowa
+  // State) — same bug as the login screen had, just here it's the more
+  // common path since most signups arrive with no invite link at all.
+  // Left blank in that case so the picker always shows an explicit
+  // choice instead.
   useEffect(() => {
     if (selectedUniversity || universities.length === 0) return
-    const wanted = typeof campus === 'string' && universities.some(u => u.email_domain === campus)
-      ? campus
-      : universities[0].email_domain
-    setSelectedUniversity(wanted)
+    if (typeof campus === 'string' && universities.some(u => u.email_domain === campus)) {
+      setSelectedUniversity(campus)
+    }
   }, [universities, selectedUniversity, campus])
 
   // Profile details
@@ -67,6 +74,10 @@ export default function SignupScreen() {
     setErrorMessage('')
     setAccountExists(false)
 
+    if (!selectedUniversity) {
+      setErrorMessage('Please select your university.')
+      return
+    }
     if (!fullEmail) {
       setErrorMessage('Please enter your email.')
       return
@@ -260,7 +271,7 @@ export default function SignupScreen() {
                   <Picker
                     selectedValue={selectedUniversity}
                     onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setAccountExists(false) }}
-                    style={styles.picker}
+                    style={[styles.picker, styles.universityPickerWeb]}
                     itemStyle={styles.pickerItem}
                     enabled={!universitiesLoading && universities.length > 0}
                   >
@@ -269,11 +280,21 @@ export default function SignupScreen() {
                     ) : universities.length === 0 ? (
                       <Picker.Item label="No campuses available" value="" />
                     ) : (
-                      universities.map((u) => (
-                        <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
-                      ))
+                      <>
+                        <Picker.Item label="— Select your university —" value="" />
+                        {universities.map((u) => (
+                          <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
+                        ))}
+                      </>
                     )}
                   </Picker>
+                  <Ionicons
+                    name="chevron-down"
+                    size={18}
+                    color="#9ca3af"
+                    style={styles.pickerCaret}
+                    pointerEvents="none"
+                  />
                 </View>
               </View>
 
@@ -561,7 +582,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#374151',
     overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
   },
+  // Only used on the University picker — native Picker already shows
+  // its own affordance (wheel/menu on tap); this caret is mainly for
+  // web, where Picker renders as a plain <select> with no visual cue
+  // that it's a dropdown at all.
+  pickerCaret: {
+    position: 'absolute',
+    right: 14,
+    top: '50%',
+    marginTop: -9,
+  },
+  // Web's <select> ships its own arrow — hides it so it doesn't double
+  // up with pickerCaret above. Only applied to the University picker;
+  // the other pickers (gender/year/personality) keep the browser's
+  // native arrow since they have no custom caret to replace it with.
+  universityPickerWeb: Platform.OS === 'web'
+    ? { paddingRight: 36, appearance: 'none' as const, WebkitAppearance: 'none' as any }
+    : {},
   // See the matching comment in app/(app)/profile.tsx — on web, Picker
   // renders as a plain <select>: it needs an explicit height + fontSize
   // to match TextInput's box, and borderWidth: 0 so its own default
