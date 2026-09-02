@@ -1145,8 +1145,16 @@ export default function ChatScreen() {
             placeholderTextColor="#6b7280"
             value={inputText}
             onChangeText={(t) => {
-              setInputText(t)
-              sendTyping(t.trim().length > 0)
+              // iOS quirk: after doSend clears the composer externally
+              // (setInputText('') isn't a user backspace), UITextView's
+              // leftover autocorrect/predictive-text state sometimes
+              // injects a leading space on the very next keystroke —
+              // visible as every message after the first starting with
+              // a stray space. Strip it; a genuine user-typed leading
+              // space isn't a real message either way.
+              const next = inputText === '' && t.startsWith(' ') ? t.slice(1) : t
+              setInputText(next)
+              sendTyping(next.trim().length > 0)
             }}
             editable={isActive}
             multiline
