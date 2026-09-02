@@ -1213,7 +1213,16 @@ export default function ChatScreen() {
             const isMine = item.sender_id === userId
             return (
               <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
-                <View style={{ maxWidth: '78%' }}>
+                {/* alignItems here is the fix for the bubble visibly
+                    growing the instant "Read" gets appended to the
+                    timestamp below it: this View defaults to
+                    alignItems:'stretch', which forces every child to
+                    match the width of the widest one — once the
+                    timestamp text got longer than the bubble, the
+                    bubble stretched to match it. flex-start/flex-end
+                    lets each child size to its own content instead, so
+                    the bubble's width depends only on the message. */}
+                <View style={{ maxWidth: '78%', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
                   <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
                     <Text style={styles.bubbleText}>{item.content}</Text>
                   </View>
