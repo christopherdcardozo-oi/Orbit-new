@@ -1,0 +1,9 @@
+# Android
+json_key_file(ENV['PLAY_JSON_KEY_PATH']) # Play Console service account JSON
+package_name('com.orghubs.orbit')
+
+# iOS
+app_identifier('com.orghubs.orbit')
+apple_id(ENV['APPLE_ID'])                  # fallback only, if the API key below isn't set
+itc_team_id(ENV['ITC_TEAM_ID'])            # App Store Connect team ID, if you have >1 team
+team_id(ENV['DEVELOPER_PORTAL_TEAM_ID'])   # Apple Developer Portal team ID

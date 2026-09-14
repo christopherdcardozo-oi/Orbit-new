@@ -1,0 +1,183 @@
+# Orbit — build & release pipeline.
+#
+# Adapted from the working Diving Board / GPN / Homeward Fastfiles (same
+# Apple team, same release-pipeline lessons) — the one real difference is
+# Orbit is an Expo/React Native app, not Capacitor: there's no static web
+# build to sync, `ios/` and `android/` are gitignored, generated fresh from
+# app.json + config plugins via `expo prebuild`, not committed.
+#
+# Required environment (put these in fastlane/.env, which is gitignored —
+# see fastlane/.env.example for the full list and where to get each value):
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH   — App Store Connect API key
+#                                                (Users and Access → Keys)
+#   PLAY_JSON_KEY_PATH                        — Google Play service account
+#                                                JSON (Play Console → Setup →
+#                                                API access) — must be
+#                                                granted access to THIS app
+#                                                specifically before first use
+#
+# Store the key files themselves OUTSIDE this repo (e.g. ~/.appstore/) and
+# point the *_PATH vars at them — don't drop them inside fastlane/ even
+# though .gitignore covers it there too.
+#
+# Lane naming follows fastlane convention: `beta` ships to TestFlight / the
+# Play Internal Testing track — private, reversible, no review gate.
+# `release` builds a production-track candidate and uploads it, but
+# deliberately STOPS SHORT of the final public step: it does not submit for
+# Apple review and it uploads to Play as a draft. Going fully live is a
+# separate, human action — either you click Submit/Start rollout yourself in
+# each console, or you explicitly ask for that as its own step. Don't add
+# submit_for_review/release_status: 'completed' to automate that away; that's
+# a one-way door and deserves its own explicit confirmation every time.
+
+default_platform(:ios)
+opt_out_usage
+
+# Force a UTF-8 locale before anything shells out. Hit this for real on
+# 2026-09-14: a non-interactive shell here had LANG/LC_ALL unset (defaulting
+# to POSIX/"C"), and CocoaPods' `pod install` (which `expo prebuild` runs
+# internally) crashed hard — Ruby's String#unicode_normalize raising
+# Encoding::CompatibilityError trying to normalize the install path. Same
+# root cause class as the xcpretty non-ASCII-byte crash the other apps'
+# Fastfiles already guard against. Pinning it here means the pipeline carries
+# its own fix rather than depending on whichever shell happens to invoke it.
+#
+# Only overrides a locale that isn't already UTF-8, so ja_JP.UTF-8 and
+# friends are left alone while "", "C" and "POSIX" get corrected.
+%w[LANG LC_ALL].each do |var|
+  ENV[var] = 'en_US.UTF-8' unless ENV[var].to_s.upcase.include?('UTF-8')
+end
+Encoding.default_external = Encoding::UTF_8 unless Encoding.default_external == Encoding::UTF_8
+
+# Point JAVA_HOME at a real JDK for the Android Gradle build — same fix as
+# Diving Board's Fastfile. Gradle dies with "Unable to locate a Java Runtime"
+# when JAVA_HOME is unset and no java is on PATH, which is the norm in a
+# non-interactive shell even though an interactive login shell usually has it.
+if ENV['JAVA_HOME'].to_s.empty? || !File.exist?(File.join(ENV['JAVA_HOME'].to_s, 'bin', 'java'))
+  candidates = ['/Applications/Android Studio.app/Contents/jbr/Contents/Home']
+  mac_java_home = `/usr/libexec/java_home 2>/dev/null`.strip
+  candidates << mac_java_home unless mac_java_home.empty?
+  found = candidates.find { |p| File.exist?(File.join(p, 'bin', 'java')) }
+  ENV['JAVA_HOME'] = found if found
+end
+
+APP_ID = 'com.orghubs.orbit'
+
+# Regenerates ios/ and android/ from app.json + the Expo config plugins —
+# the source of truth. NEVER hand-edit ios/ or android/ directly: they're
+# gitignored and rebuilt fresh by this on every release. --clean wipes any
+# stale native folder first, so a leftover build artifact from a previous
+# run (or from `expo run:ios` during local dev) can't leak into a release
+# build.
+lane :prebuild do |options|
+  Dir.chdir('..') do
+    args = ['npx', 'expo', 'prebuild', '--clean']
+    args += ['--platform', options[:platform]] if options[:platform]
+    sh(*args)
+  end
+end
+
+def ios_api_key
+  app_store_connect_api_key(
+    key_id: ENV['ASC_KEY_ID'],
+    issuer_id: ENV['ASC_ISSUER_ID'],
+    key_filepath: ENV['ASC_KEY_PATH'],
+  )
+end
+
+# Rewrite `versionCode N` in android/app/build.gradle. Dependency-free (no
+# fastlane plugin) and cwd-agnostic — tries both relative locations since the
+# lane body and the actions don't necessarily share a working directory.
+def set_android_version_code(code)
+  ['android/app/build.gradle', '../android/app/build.gradle'].each do |path|
+    next unless File.exist?(path)
+    File.write(path, File.read(path).sub(/versionCode\s+\d+/, "versionCode #{code}"))
+    UI.message("Set Android versionCode to #{code}")
+    return
+  end
+  UI.user_error!('Could not find android/app/build.gradle to set versionCode')
+end
+
+# Play requires version codes to be unique (and effectively increasing)
+# across the WHOLE app, not per track — checking only 'internal' or only
+# 'production' misses a higher code sitting on whichever track wasn't
+# queried, and the upload gets rejected with "Version code N has already
+# been used." This checks every track and returns the overall max, so the
+# next code is always safely past all of them.
+def latest_android_version_code
+  %w[internal alpha beta production].map { |t|
+    google_play_track_version_codes(track: t).first || 0
+  }.max
+end
+
+platform :ios do
+  desc 'Build and upload a new build to TestFlight'
+  lane :beta do
+    prebuild(platform: 'ios')
+    ios_api_key
+    next_build = latest_testflight_build_number + 1
+    increment_build_number(build_number: next_build, xcodeproj: 'ios/Orbit.xcodeproj')
+    build_app(
+      workspace: 'ios/Orbit.xcworkspace',
+      scheme: 'Orbit',
+      export_method: 'app-store',
+      export_options: { signingStyle: 'automatic' },
+    )
+    upload_to_testflight(skip_waiting_for_build_processing: true)
+  end
+
+  desc 'Build and upload a production-candidate build to App Store Connect. Does NOT submit for review — that click stays manual.'
+  lane :release do
+    prebuild(platform: 'ios')
+    ios_api_key
+    next_build = latest_testflight_build_number + 1
+    increment_build_number(build_number: next_build, xcodeproj: 'ios/Orbit.xcodeproj')
+    build_app(
+      workspace: 'ios/Orbit.xcworkspace',
+      scheme: 'Orbit',
+      export_method: 'app-store',
+      export_options: { signingStyle: 'automatic' },
+    )
+    upload_to_app_store(
+      submit_for_review: false,  # deliberate — see file header
+      automatic_release: false,
+      skip_metadata: true,       # listing text/screenshots are already set in App Store Connect
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false,
+    )
+  end
+end
+
+platform :android do
+  desc 'Build and upload a new build to the Play Console Internal Testing track'
+  lane :beta do
+    prebuild(platform: 'android')
+    # NOTE: a brand-new app's very first-ever Play Console upload must be a
+    # manual drag-and-drop in the Play Console UI — Google's API rejects the
+    # first release for a new app. Once that's done once, this lane works
+    # normally for every upload after.
+    set_android_version_code(latest_android_version_code + 1)
+    gradle(task: 'bundle', build_type: 'Release', project_dir: 'android/')
+    upload_to_play_store(
+      track: 'internal',
+      aab: 'android/app/build/outputs/bundle/release/app-release.aab',
+      # supply scans the output directory and refuses to run if it finds
+      # both an .aab and an .apk. Any earlier assembleRelease leaves an
+      # .apk behind, so be explicit rather than depending on a clean dir.
+      skip_upload_apk: true,
+    )
+  end
+
+  desc 'Build and upload a production-candidate build to the Play Console, staged as a draft. Does NOT start the rollout — that click stays manual.'
+  lane :release do
+    prebuild(platform: 'android')
+    set_android_version_code(latest_android_version_code + 1)
+    gradle(task: 'bundle', build_type: 'Release', project_dir: 'android/')
+    upload_to_play_store(
+      track: 'production',
+      aab: 'android/app/build/outputs/bundle/release/app-release.aab',
+      skip_upload_apk: true,
+      release_status: 'draft',  # deliberate — see file header
+    )
+  end
+end

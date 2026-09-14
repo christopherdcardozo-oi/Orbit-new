@@ -39,3 +39,15 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Fastlane — credentials + generated reports/artifacts. The *.p8/*.jks
+# rules above already cover key files wherever they'd land, but these are
+# explicit for fastlane/ specifically since .env there holds real secrets
+# and must never be committed.
+fastlane/.env
+fastlane/.env.*
+!fastlane/.env.example
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
