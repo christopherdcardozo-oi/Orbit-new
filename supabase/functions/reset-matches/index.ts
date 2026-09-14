@@ -335,6 +335,7 @@ async function runMatchmakingForCampus(
   const result: CampusResult = { domain, mode: 'skipped', matched: 0, oddManOut: [], errors: [] };
 
   if (domainProfiles.length === 0) {
+    console.log(`[reset-matches] ${domain}: skipping, zero active profiles`);
     return result;
   }
 
@@ -343,6 +344,20 @@ async function runMatchmakingForCampus(
   const secondsSinceMidnight = 86400 - secondsUntilMidnight;
 
   const justPassedMidnight = options.allowReset && secondsSinceMidnight < RESET_WINDOW_SECONDS;
+
+  // Diagnostic trace for the "did we just cross local midnight?" call —
+  // the ONE decision this whole function hinges on, and the only thing
+  // that went wrong the night nothing ran (9/13->9/14): every cron tick
+  // returned 200 with zero errors, because justPassedMidnight silently
+  // evaluated false all night for both campuses and the function just
+  // had nothing to do. With no log line here, there was nothing to
+  // inspect afterward — this makes that decision visible every tick,
+  // cheap enough at ~192 lines/day (2 campuses x 96 ticks) to just
+  // always emit it rather than only on suspected failure.
+  console.log(
+    `[reset-matches] ${domain}: tz=${tz} secondsSinceMidnight=${secondsSinceMidnight} ` +
+    `justPassedMidnight=${justPassedMidnight} allowReset=${options.allowReset} allowTopup=${options.allowTopup}`
+  );
 
   const domainProfileIds = domainProfiles.map((p) => p.id);
 
@@ -364,6 +379,7 @@ async function runMatchmakingForCampus(
       .eq('status', 'active')
       .in('user1_id', domainProfileIds);
     if (expireError) {
+      console.error(`[reset-matches] ${domain}: failed to expire matches: ${expireError.message}`);
       result.errors.push(`Failed to expire matches for ${domain}: ${expireError.message}`);
       return result;
     }
@@ -393,6 +409,7 @@ async function runMatchmakingForCampus(
       .in('user2_id', domainProfileIds);
 
     if (scheduledError) {
+      console.error(`[reset-matches] ${domain}: failed to fetch scheduled matches: ${scheduledError.message}`);
       result.errors.push(`Failed to fetch scheduled matches for ${domain}: ${scheduledError.message}`);
     } else {
       const profileById = new Map(domainProfiles.map((p) => [p.id, p]));
@@ -413,6 +430,7 @@ async function runMatchmakingForCampus(
           expires_at: expiresAt.toISOString(),
         });
         if (insertErr) {
+          console.error(`[reset-matches] ${domain}: failed to fulfill scheduled match ${s.id}: ${insertErr.message}`);
           result.errors.push(`Failed to fulfill scheduled match ${s.id}: ${insertErr.message}`);
           continue;
         }
@@ -436,6 +454,7 @@ async function runMatchmakingForCampus(
     .in('user1_id', domainProfileIds);
 
   if (activeError) {
+    console.error(`[reset-matches] ${domain}: failed to fetch active matches: ${activeError.message}`);
     result.errors.push(`Failed to fetch active matches for ${domain}: ${activeError.message}`);
     return result;
   }
@@ -451,6 +470,7 @@ async function runMatchmakingForCampus(
   );
   if (eligibleProfiles.length < 2) {
     result.oddManOut = eligibleProfiles.map((p) => p.id);
+    console.log(`[reset-matches] ${domain}: fewer than 2 eligible (${eligibleProfiles.length}) — mode=${result.mode}, nothing to pair`);
     return result;
   }
 
@@ -464,6 +484,7 @@ async function runMatchmakingForCampus(
     .gte('matched_at', thirtyDaysAgo.toISOString().split('T')[0]);
 
   if (historyError) {
+    console.error(`[reset-matches] ${domain}: failed to fetch history: ${historyError.message}`);
     result.errors.push(`Failed to fetch history for ${domain}: ${historyError.message}`);
     return result;
   }
@@ -496,6 +517,7 @@ async function runMatchmakingForCampus(
     .or(`blocker_id.in.(${domainProfileIds.join(',')}),blocked_id.in.(${domainProfileIds.join(',')})`);
 
   if (blocksError) {
+    console.error(`[reset-matches] ${domain}: failed to fetch blocks: ${blocksError.message}`);
     result.errors.push(`Failed to fetch blocks for ${domain}: ${blocksError.message}`);
     // Not fatal — a block-lookup failure shouldn't block all matching.
   }
@@ -666,10 +688,12 @@ async function runMatchmakingForCampus(
   if (newMatches.length > 0) {
     const { error: matchInsertError } = await supabase.from('matches').insert(newMatches);
     if (matchInsertError) {
+      console.error(`[reset-matches] ${domain}: failed to insert matches: ${matchInsertError.message}`);
       result.errors.push(`Failed to insert matches for ${domain}: ${matchInsertError.message}`);
     } else {
       const { error: historyInsertError } = await supabase.from('match_history').insert(newHistory);
       if (historyInsertError) {
+        console.error(`[reset-matches] ${domain}: failed to insert history: ${historyInsertError.message}`);
         result.errors.push(`Failed to insert history for ${domain}: ${historyInsertError.message}`);
       }
       // Note: push notifications used to be sent from here via the
@@ -680,6 +704,10 @@ async function runMatchmakingForCampus(
     }
   }
 
+  console.log(
+    `[reset-matches] ${domain}: done — mode=${result.mode} matched=${result.matched} ` +
+    `oddManOut=${result.oddManOut.length} errors=${result.errors.length}`
+  );
   return result;
 }
 
