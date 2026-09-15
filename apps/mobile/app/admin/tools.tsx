@@ -4,13 +4,13 @@
 // admin_users authorization + campus scope internally.
 
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Pressable, Modal, ScrollView, Switch, Platform } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Pressable, Modal, ScrollView, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAdminScope } from '../../lib/adminScope';
 import CampusFilter, { useCampusOptions } from '../../components/admin/CampusFilter';
+import Dropdown from '../../components/Dropdown';
 
 type SearchRow = { id: string; display_alias: string; email: string | null; email_domain: string };
 
@@ -360,24 +360,19 @@ export default function AdminTools() {
             ) : (
               <>
                 <Text style={styles.pickerLabel}>Select a campus, or add a new one</Text>
-                <View style={styles.campusPickerContainer}>
-                  <Picker
-                    selectedValue={selectedCampusDomain}
-                    onValueChange={(val) => setSelectedCampusDomain(String(val))}
-                    style={styles.campusPicker}
-                    itemStyle={styles.campusPickerItem}
-                  >
-                    <Picker.Item label="— Select —" value="" />
-                    <Picker.Item label="＋ Add new campus" value={ADD_CAMPUS_SENTINEL} />
-                    {universities.map((u) => (
-                      <Picker.Item
-                        key={u.email_domain}
-                        label={`${u.is_active ? '🟢' : '⚪'} ${u.university_name}`}
-                        value={u.email_domain}
-                      />
-                    ))}
-                  </Picker>
-                </View>
+                <Dropdown
+                  value={selectedCampusDomain}
+                  onValueChange={(val) => setSelectedCampusDomain(val)}
+                  items={[
+                    { label: '＋ Add new campus', value: ADD_CAMPUS_SENTINEL },
+                    ...universities.map((u) => ({
+                      label: `${u.is_active ? '🟢' : '⚪'} ${u.university_name}`,
+                      value: u.email_domain,
+                    })),
+                  ]}
+                  placeholder="— Select —"
+                  title="Select a campus"
+                />
 
                 {/* ---- Detail panel for an existing campus ---- */}
                 {selectedUniversity && !campusEditing && (
@@ -440,18 +435,12 @@ export default function AdminTools() {
                       placeholderTextColor="#6b7280"
                     />
                     <Text style={[styles.pickerLabel, { marginTop: 12 }]}>Timezone</Text>
-                    <View style={styles.campusPickerContainer}>
-                      <Picker
-                        selectedValue={editTimezone}
-                        onValueChange={(val) => setEditTimezone(String(val))}
-                        style={styles.campusPicker}
-                        itemStyle={styles.campusPickerItem}
-                      >
-                        {US_TIMEZONES.map((t) => (
-                          <Picker.Item key={t.value} label={t.label} value={t.value} />
-                        ))}
-                      </Picker>
-                    </View>
+                    <Dropdown
+                      value={editTimezone}
+                      onValueChange={setEditTimezone}
+                      items={US_TIMEZONES}
+                      title="Timezone"
+                    />
                     {campusSaveError && <Text style={styles.errorText}>{campusSaveError}</Text>}
                     <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
                       <TouchableOpacity
@@ -504,18 +493,12 @@ export default function AdminTools() {
                       autoCorrect={false}
                     />
                     <Text style={[styles.pickerLabel, { marginTop: 12 }]}>Timezone</Text>
-                    <View style={styles.campusPickerContainer}>
-                      <Picker
-                        selectedValue={newTimezone}
-                        onValueChange={(val) => setNewTimezone(String(val))}
-                        style={styles.campusPicker}
-                        itemStyle={styles.campusPickerItem}
-                      >
-                        {US_TIMEZONES.map((t) => (
-                          <Picker.Item key={t.value} label={t.label} value={t.value} />
-                        ))}
-                      </Picker>
-                    </View>
+                    <Dropdown
+                      value={newTimezone}
+                      onValueChange={setNewTimezone}
+                      items={US_TIMEZONES}
+                      title="Timezone"
+                    />
                     {addCampusError && <Text style={styles.errorText}>{addCampusError}</Text>}
                     <TouchableOpacity
                       style={[styles.primaryButton, (!newDomain.trim() || !newName.trim() || addCampusBusy) && { opacity: 0.4 }]}
@@ -770,23 +753,6 @@ const styles = StyleSheet.create({
   },
   campusName: { color: '#fff', fontSize: 14, fontWeight: '600' },
   campusMeta: { color: '#6b7280', fontSize: 11, marginTop: 2 },
-  // Same web-vs-native split as components/admin/CampusFilter.tsx —
-  // RN Web's Picker renders as a plain <select> and needs explicit
-  // sizing or it collapses to a tiny native-default box; native
-  // iOS/Android render their own wheel/dialog and should be left alone.
-  campusPickerContainer: {
-    backgroundColor: '#030712', borderRadius: 10, borderWidth: 1, borderColor: '#374151',
-    overflow: 'hidden',
-  },
-  campusPicker: {
-    backgroundColor: 'transparent',
-    color: '#fff',
-    width: '100%',
-    ...(Platform.OS === 'web'
-      ? { height: 44, paddingHorizontal: 12, fontSize: 15, borderWidth: 0 }
-      : {}),
-  },
-  campusPickerItem: { color: '#fff', backgroundColor: '#030712', fontSize: 15 },
   campusEditPanel: {
     marginTop: 12, padding: 12, borderRadius: 12,
     backgroundColor: 'rgba(147, 51, 234, 0.06)', borderWidth: 1, borderColor: 'rgba(147, 51, 234, 0.25)',

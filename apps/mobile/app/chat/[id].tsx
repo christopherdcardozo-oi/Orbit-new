@@ -19,9 +19,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
-import { Picker } from '@react-native-picker/picker'
 import CosmicBackground from '../../components/CosmicBackground'
 import Skeleton from '../../components/Skeleton'
+import Dropdown from '../../components/Dropdown'
 import { supabase } from '../../lib/supabase'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
 
@@ -1453,22 +1453,16 @@ export default function ChatScreen() {
               return (
                 <>
                   <Text style={[styles.sheetHelp, { marginTop: 12 }]}>Add another:</Text>
-                  <View style={styles.pickerBox}>
-                    <Picker
-                      selectedValue={currentIsUsed ? availableTypes[0].value : revealType}
-                      onValueChange={(v) => {
-                        setRevealType(v as HandleType)
-                        setRevealValue('')
-                        setRevealError(null)
-                      }}
-                      style={styles.picker}
-                      itemStyle={{ color: '#fff' }}
-                    >
-                      {availableTypes.map((t) => (
-                        <Picker.Item key={t.value} label={`${t.emoji}  ${t.label}`} value={t.value} />
-                      ))}
-                    </Picker>
-                  </View>
+                  <Dropdown
+                    value={currentIsUsed ? availableTypes[0].value : revealType}
+                    onValueChange={(v) => {
+                      setRevealType(v as HandleType)
+                      setRevealValue('')
+                      setRevealError(null)
+                    }}
+                    items={availableTypes.map((t) => ({ label: `${t.emoji}  ${t.label}`, value: t.value }))}
+                    title="Add another"
+                  />
                   <TextInput
                     style={styles.reportInput}
                     placeholder={handleMeta(revealType).placeholder}
@@ -1943,18 +1937,6 @@ const styles = StyleSheet.create({
   mineRowLabel: { color: '#9ca3af', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
   mineRowValue: { color: '#fff', fontSize: 15, fontWeight: '500' },
   mineRowX: { padding: 4 },
-
-  pickerBox: {
-    backgroundColor: 'rgba(17, 24, 39, 0.8)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#374151',
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  picker: Platform.OS === 'web'
-    ? ({ color: '#fff', height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0, backgroundColor: 'transparent' } as any)
-    : ({ color: '#fff' } as any),
 
   // Menu / report / block / reveal sheets
   menuBackdrop: {

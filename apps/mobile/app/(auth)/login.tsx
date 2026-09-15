@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native'
 import { Link, useRouter } from 'expo-router'
-import { Picker } from '@react-native-picker/picker'
-import { Ionicons } from '@expo/vector-icons'
+import Dropdown from '../../components/Dropdown'
 import { supabase } from '../../lib/supabase'
 import { useActiveUniversities } from '../../lib/universities'
 
@@ -18,16 +17,10 @@ export default function LoginScreen() {
   // campus without noticing. Left blank until they explicitly choose.
   const [selectedUniversity, setSelectedUniversity] = useState('')
 
-  // Single flat, unconditional list of {label, value} for the Picker —
-  // see the comment where this is rendered for why it can't branch.
-  const universityPickerItems = useMemo(() => {
-    if (universitiesLoading) return [{ label: 'Loading campuses…', value: '' }]
-    if (universities.length === 0) return [{ label: 'No campuses available', value: '' }]
-    return [
-      { label: '— Select your university —', value: '' },
-      ...universities.map((u) => ({ label: u.university_name, value: u.email_domain })),
-    ]
-  }, [universitiesLoading, universities])
+  const universityPickerItems = useMemo(
+    () => universities.map((u) => ({ label: u.university_name, value: u.email_domain })),
+    [universities]
+  )
 
   const [fullEmail, setFullEmail] = useState('')
   const [loading, setLoading] = useState(false)
@@ -151,35 +144,14 @@ export default function LoginScreen() {
           <>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>University</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={selectedUniversity}
-                  onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setNoAccountFound(false) }}
-                  style={styles.picker}
-                  itemStyle={styles.pickerItem}
-                  enabled={!universitiesLoading && universities.length > 0}
-                >
-                  {/* @react-native-picker/picker has a known Android-only bug
-                      (github.com/react-native-picker/picker/issues/175) where
-                      switching between differently-shaped conditional
-                      children (a lone Item vs. a Fragment of Items) miscounts
-                      children on the native side and can break the whole
-                      list, rendering literal "undefined" instead of real
-                      items. Fix: always render ONE flat, unconditional array
-                      of Picker.Item — compute it in JS first, never branch
-                      the JSX itself. */}
-                  {universityPickerItems.map((item) => (
-                    <Picker.Item key={item.value} label={item.label} value={item.value} />
-                  ))}
-                </Picker>
-                <Ionicons
-                  name="chevron-down"
-                  size={18}
-                  color="#9ca3af"
-                  style={styles.pickerCaret}
-                  pointerEvents="none"
-                />
-              </View>
+              <Dropdown
+                value={selectedUniversity}
+                onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setNoAccountFound(false) }}
+                items={universityPickerItems}
+                placeholder={universitiesLoading ? 'Loading campuses…' : universities.length === 0 ? 'No campuses available' : '— Select your university —'}
+                enabled={!universitiesLoading && universities.length > 0}
+                title="Select your university"
+              />
             </View>
 
             <View style={styles.inputGroup}>
@@ -331,58 +303,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 12,
     marginTop: 6,
-  },
-  pickerContainer: {
-    backgroundColor: 'rgba(3, 7, 18, 0.5)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#374151',
-    overflow: 'hidden',
-    position: 'relative',
-    justifyContent: 'center',
-    // iOS's native Picker is always an inline spinning wheel (unlike
-    // Android, which shows a compact closed field and opens a wheel/menu
-    // only on tap) — with no explicit height it defaults to ~216pt,
-    // dwarfing every other field on the form. Android ignores this;
-    // its Picker sizes itself to its own compact content regardless.
-    ...(Platform.OS === 'ios' ? { height: 120 } : {}),
-  },
-  // Native Picker already shows its own affordance (wheel/menu on tap);
-  // this caret is mainly for web, where Picker renders as a plain
-  // <select> with no visual cue that it's a dropdown at all.
-  pickerCaret: {
-    position: 'absolute',
-    right: 14,
-    top: '50%',
-    marginTop: -9,
-  },
-  // On web, Picker renders as a plain <select>: it needs an explicit
-  // height + fontSize to match TextInput's box, and borderWidth: 0 so
-  // its own default border doesn't double up with pickerContainer's.
-  // Native iOS/Android are left untouched (see the matching comment in
-  // app/(app)/profile.tsx for the full explanation).
-  picker: {
-    backgroundColor: 'transparent',
-    color: '#fff',
-    ...(Platform.OS === 'web'
-      ? {
-          height: 48,
-          paddingHorizontal: 16,
-          // Room on the right so text never runs under our custom caret.
-          paddingRight: 36,
-          fontSize: 16,
-          borderWidth: 0,
-          // Web's <select> ships its own arrow — hide it so our custom
-          // pickerCaret icon doesn't double up with the browser's.
-          appearance: 'none',
-          WebkitAppearance: 'none',
-        }
-      : {}),
-  },
-  pickerItem: {
-    color: '#fff',
-    backgroundColor: '#030712',
-    fontSize: 16,
   },
   textInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',

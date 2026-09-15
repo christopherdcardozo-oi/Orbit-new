@@ -2,16 +2,16 @@ import { useEffect, useState, useMemo } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
 import { Link, useRouter, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
-import { Picker } from '@react-native-picker/picker'
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 import SpamHint from '../../components/SpamHint'
+import Dropdown from '../../components/Dropdown'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
 import { HOBBIES, ACTIVITIES } from '../../lib/interests'
 import { useActiveUniversities } from '../../lib/universities'
 
-const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
-const GENDERS = ['Male', 'Female', 'Other'];
+const YEAR_ITEMS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'].map((y) => ({ label: y, value: y }))
+const GENDER_ITEMS = ['Male', 'Female', 'Other'].map((g) => ({ label: g, value: g }))
 
 type Step = 'details' | 'code' | 'personality' | 'reveal'
 
@@ -23,16 +23,10 @@ export default function SignupScreen() {
   const { universities, loading: universitiesLoading } = useActiveUniversities()
   const [selectedUniversity, setSelectedUniversity] = useState('')
 
-  // Single flat, unconditional list of {label, value} for the Picker —
-  // see the comment where this is rendered for why it can't branch.
-  const universityPickerItems = useMemo(() => {
-    if (universitiesLoading) return [{ label: 'Loading campuses…', value: '' }]
-    if (universities.length === 0) return [{ label: 'No campuses available', value: '' }]
-    return [
-      { label: '— Select your university —', value: '' },
-      ...universities.map((u) => ({ label: u.university_name, value: u.email_domain })),
-    ]
-  }, [universitiesLoading, universities])
+  const universityPickerItems = useMemo(
+    () => universities.map((u) => ({ label: u.university_name, value: u.email_domain })),
+    [universities]
+  )
 
   const [fullEmail, setFullEmail] = useState('')
 
@@ -279,35 +273,14 @@ export default function SignupScreen() {
             <>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>University</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={selectedUniversity}
-                    onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setAccountExists(false) }}
-                    style={[styles.picker, styles.universityPickerWeb]}
-                    itemStyle={styles.pickerItem}
-                    enabled={!universitiesLoading && universities.length > 0}
-                  >
-                    {/* @react-native-picker/picker has a known Android-only
-                        bug (github.com/react-native-picker/picker/issues/175)
-                        where switching between differently-shaped
-                        conditional children (a lone Item vs. a Fragment of
-                        Items) miscounts children on the native side and can
-                        break the whole list, rendering literal "undefined"
-                        instead of real items. Fix: always render ONE flat,
-                        unconditional array of Picker.Item — compute it in JS
-                        first, never branch the JSX itself. */}
-                    {universityPickerItems.map((item) => (
-                      <Picker.Item key={item.value} label={item.label} value={item.value} />
-                    ))}
-                  </Picker>
-                  <Ionicons
-                    name="chevron-down"
-                    size={18}
-                    color="#9ca3af"
-                    style={styles.pickerCaret}
-                    pointerEvents="none"
-                  />
-                </View>
+                <Dropdown
+                  value={selectedUniversity}
+                  onValueChange={(val) => { setSelectedUniversity(val); setErrorMessage(''); setAccountExists(false) }}
+                  items={universityPickerItems}
+                  placeholder={universitiesLoading ? 'Loading campuses…' : universities.length === 0 ? 'No campuses available' : '— Select your university —'}
+                  enabled={!universitiesLoading && universities.length > 0}
+                  title="Select your university"
+                />
               </View>
 
               <View style={styles.inputGroup}>
@@ -331,16 +304,12 @@ export default function SignupScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Identity</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={gender}
-                    onValueChange={setGender}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {GENDERS.map(g => <Picker.Item key={g} label={g} value={g} />)}
-                  </Picker>
-                </View>
+                <Dropdown
+                  value={gender}
+                  onValueChange={setGender}
+                  items={GENDER_ITEMS}
+                  title="Identity"
+                />
               </View>
 
               {gender === 'Other' && (
@@ -369,16 +338,12 @@ export default function SignupScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Year in School</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={year}
-                    onValueChange={setYear}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {YEARS.map(y => <Picker.Item key={y} label={y} value={y} />)}
-                  </Picker>
-                </View>
+                <Dropdown
+                  value={year}
+                  onValueChange={setYear}
+                  items={YEAR_ITEMS}
+                  title="Year in School"
+                />
               </View>
 
               {errorMessage ? (
@@ -453,17 +418,13 @@ export default function SignupScreen() {
               {PERSONALITY_QUESTIONS.map((q, i) => (
                 <View key={q.key} style={styles.inputGroup}>
                   <Text style={styles.label}>{q.label}</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={personality[i] || ''}
-                      onValueChange={(val) => setPersonalityAnswer(i, val)}
-                      style={styles.picker}
-                      itemStyle={styles.pickerItem}
-                    >
-                      <Picker.Item label="Select answer..." value="" />
-                      {q.options.map(opt => <Picker.Item key={opt} label={opt} value={opt} />)}
-                    </Picker>
-                  </View>
+                  <Dropdown
+                    value={personality[i] || ''}
+                    onValueChange={(val) => setPersonalityAnswer(i, val)}
+                    items={q.options.map((opt) => ({ label: opt, value: opt }))}
+                    placeholder="Select answer..."
+                    title={q.label}
+                  />
                 </View>
               ))}
 
@@ -592,55 +553,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 12,
     marginTop: 6,
-  },
-  pickerContainer: {
-    backgroundColor: 'rgba(3, 7, 18, 0.5)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#374151',
-    overflow: 'hidden',
-    position: 'relative',
-    justifyContent: 'center',
-    // iOS's native Picker is always an inline spinning wheel (unlike
-    // Android, which shows a compact closed field and opens a wheel/menu
-    // only on tap) — with no explicit height it defaults to ~216pt,
-    // dwarfing every other field on the form. Android ignores this;
-    // its Picker sizes itself to its own compact content regardless.
-    ...(Platform.OS === 'ios' ? { height: 120 } : {}),
-  },
-  // Only used on the University picker — native Picker already shows
-  // its own affordance (wheel/menu on tap); this caret is mainly for
-  // web, where Picker renders as a plain <select> with no visual cue
-  // that it's a dropdown at all.
-  pickerCaret: {
-    position: 'absolute',
-    right: 14,
-    top: '50%',
-    marginTop: -9,
-  },
-  // Web's <select> ships its own arrow — hides it so it doesn't double
-  // up with pickerCaret above. Only applied to the University picker;
-  // the other pickers (gender/year/personality) keep the browser's
-  // native arrow since they have no custom caret to replace it with.
-  universityPickerWeb: Platform.OS === 'web'
-    ? { paddingRight: 36, appearance: 'none' as const, WebkitAppearance: 'none' as any }
-    : {},
-  // See the matching comment in app/(app)/profile.tsx — on web, Picker
-  // renders as a plain <select>: it needs an explicit height + fontSize
-  // to match TextInput's box, and borderWidth: 0 so its own default
-  // border doesn't double up with pickerContainer's. Native iOS/Android
-  // are left untouched.
-  picker: {
-    backgroundColor: 'transparent',
-    color: '#fff',
-    ...(Platform.OS === 'web'
-      ? { height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0 }
-      : {}),
-  },
-  pickerItem: {
-    color: '#fff',
-    backgroundColor: '#030712',
-    fontSize: 16,
   },
   textInput: {
     backgroundColor: 'rgba(3, 7, 18, 0.5)',

@@ -5,8 +5,8 @@
 // scope allows. Defaults to "All".
 
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { View, Text, StyleSheet } from 'react-native';
+import Dropdown from '../Dropdown';
 import { supabase } from '../../lib/supabase';
 
 export type CampusOption = { email_domain: string; university_name: string };
@@ -50,19 +50,15 @@ export default function CampusFilter({
   return (
     <View style={styles.wrap}>
       <Text style={styles.label}>Campus</Text>
-      <View style={styles.pickerContainer}>
-        <Picker
-          selectedValue={selected ?? '__all__'}
-          onValueChange={(val) => onChange(val === '__all__' ? null : String(val))}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-        >
-          <Picker.Item label="All" value="__all__" />
-          {options.map((o) => (
-            <Picker.Item key={o.email_domain} label={o.university_name} value={o.email_domain} />
-          ))}
-        </Picker>
-      </View>
+      <Dropdown
+        value={selected ?? '__all__'}
+        onValueChange={(val) => onChange(val === '__all__' ? null : val)}
+        items={[
+          { label: 'All', value: '__all__' },
+          ...options.map((o) => ({ label: o.university_name, value: o.email_domain })),
+        ]}
+        title="Campus"
+      />
     </View>
   );
 }
@@ -70,25 +66,4 @@ export default function CampusFilter({
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 16, marginBottom: 12 },
   label: { color: '#6b7280', fontSize: 11, marginBottom: 4, fontWeight: '600' },
-  pickerContainer: {
-    backgroundColor: '#111827', borderRadius: 10, borderWidth: 1, borderColor: '#374151',
-    overflow: 'hidden',
-  },
-  // Same web-vs-native split used elsewhere in the app (see the
-  // matching comment in app/(auth)/login.tsx and app/(app)/profile.tsx)
-  // — RN Web's Picker renders as a plain <select> and needs explicit
-  // sizing; native iOS/Android render their own wheel/dialog and
-  // should be left alone.
-  picker: {
-    backgroundColor: 'transparent',
-    color: '#fff',
-    ...(Platform.OS === 'web'
-      ? { height: 40, paddingHorizontal: 12, fontSize: 14, borderWidth: 0 }
-      : {}),
-  },
-  pickerItem: {
-    color: '#fff',
-    backgroundColor: '#111827',
-    fontSize: 14,
-  },
 });

@@ -2,17 +2,17 @@ import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { Picker } from '@react-native-picker/picker';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import CosmicBackground from '../../components/CosmicBackground';
 import Skeleton from '../../components/Skeleton';
+import Dropdown from '../../components/Dropdown';
 import { PERSONALITY_QUESTIONS } from '../../lib/personality';
 import { HOBBIES, ACTIVITIES } from '../../lib/interests';
 import * as webPush from '../../lib/webPush';
 import { useIsStandalone } from '../../lib/useIsStandalone';
 import { getCurrentBuildId, isUpdateAvailable } from '../../lib/versionCheck';
 
-const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
+const YEAR_ITEMS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'].map((y) => ({ label: y, value: y }))
 
 // Must stay in sync with the CATEGORIES set in
 // supabase/functions/send-feedback/index.ts — the edge function rejects
@@ -411,30 +411,27 @@ export default function ProfileTabScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Year in School</Text>
-              <View style={styles.pickerContainer}>
-                <Picker selectedValue={year} onValueChange={setYear} style={styles.picker} itemStyle={styles.pickerItem}>
-                  <Picker.Item label="Select your year..." value="" />
-                  {YEARS.map(y => <Picker.Item key={y} label={y} value={y} />)}
-                </Picker>
-              </View>
+              <Dropdown
+                value={year}
+                onValueChange={setYear}
+                items={YEAR_ITEMS}
+                placeholder="Select your year..."
+                title="Year in School"
+              />
             </View>
 
             <Text style={[styles.label, { marginTop: 12, marginBottom: 12, fontSize: 18, color: '#fff' }]}>Personality Profile</Text>
-            
+
             {QUESTIONS.map((q, i) => (
               <View key={q.key} style={styles.inputGroup}>
                 <Text style={styles.label}>{q.label}</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={personality[i] || ''}
-                    onValueChange={(val) => setPersonalityAnswer(i, val)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    <Picker.Item label="Select answer..." value="" />
-                    {q.options.map(opt => <Picker.Item key={opt} label={opt} value={opt} />)}
-                  </Picker>
-                </View>
+                <Dropdown
+                  value={personality[i] || ''}
+                  onValueChange={(val) => setPersonalityAnswer(i, val)}
+                  items={q.options.map((opt) => ({ label: opt, value: opt }))}
+                  placeholder="Select answer..."
+                  title={q.label}
+                />
               </View>
             ))}
 
@@ -694,18 +691,12 @@ export default function ProfileTabScreen() {
             <Text style={styles.modalTitle}>Send Feedback</Text>
 
             <Text style={[styles.label, { marginTop: 8 }]}>What is this about?</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={feedbackCategory}
-                onValueChange={setFeedbackCategory}
-                style={styles.picker}
-                itemStyle={styles.pickerItem}
-              >
-                {FEEDBACK_CATEGORIES.map(c => (
-                  <Picker.Item key={c.value} label={c.label} value={c.value} />
-                ))}
-              </Picker>
-            </View>
+            <Dropdown
+              value={feedbackCategory}
+              onValueChange={setFeedbackCategory}
+              items={FEEDBACK_CATEGORIES}
+              title="What is this about?"
+            />
 
             <Text style={[styles.label, { marginTop: 16 }]}>Your message</Text>
             <TextInput
@@ -817,27 +808,6 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 20 },
   label: { color: '#d1d5db', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   textInput: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderWidth: 1, borderColor: '#374151', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#fff', fontSize: 16 },
-  pickerContainer: { backgroundColor: 'rgba(3, 7, 18, 0.5)', borderRadius: 12, borderWidth: 1, borderColor: '#374151', overflow: 'hidden' },
-  // On web, Picker renders as a plain <select>, which:
-  //  - picks up the browser's own (smaller) default font-size instead of
-  //    inheriting anything from textInput, so we set fontSize explicitly
-  //    to match;
-  //  - ships its own default border/outline, which — layered under
-  //    pickerContainer's border — reads as a doubled/off "weird" edge;
-  //    borderWidth: 0 here makes pickerContainer's border the only one
-  //    that's visible, same as textInput;
-  //  - doesn't inherit paddingVertical the way TextInput does, so we set
-  //    an explicit height instead to get the same ~48px box.
-  // None of this applies natively — iOS renders Picker as a wheel, so we
-  // only touch these on web.
-  picker: {
-    color: '#fff',
-    backgroundColor: 'transparent',
-    ...(Platform.OS === 'web'
-      ? { height: 48, paddingHorizontal: 16, fontSize: 16, borderWidth: 0 }
-      : {}),
-  },
-  pickerItem: { color: '#fff', backgroundColor: '#030712', fontSize: 16 },
   avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
   avatarOption: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1f2937', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
   avatarOptionSelected: { borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.2)' },

@@ -4,13 +4,13 @@
 // campus scoping as the other admin screens.
 
 import { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Platform } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAdminScope } from '../../lib/adminScope';
 import CampusFilter, { useCampusOptions } from '../../components/admin/CampusFilter';
+import Dropdown from '../../components/Dropdown';
 
 const CATEGORY_LABELS: Record<string, string> = {
   'bug': 'Bug',
@@ -110,19 +110,15 @@ export default function AdminFeedback() {
 
       <View style={styles.categoryWrap}>
         <Text style={styles.categoryLabel}>Reason</Text>
-        <View style={styles.categoryPickerContainer}>
-          <Picker
-            selectedValue={categoryFilter ?? '__all__'}
-            onValueChange={(val) => setCategoryFilter(val === '__all__' ? null : String(val))}
-            style={styles.categoryPicker}
-            itemStyle={styles.categoryPickerItem}
-          >
-            <Picker.Item label="All" value="__all__" />
-            {CATEGORIES.map((c) => (
-              <Picker.Item key={c} label={CATEGORY_LABELS[c]} value={c} />
-            ))}
-          </Picker>
-        </View>
+        <Dropdown
+          value={categoryFilter ?? '__all__'}
+          onValueChange={(val) => setCategoryFilter(val === '__all__' ? null : val)}
+          items={[
+            { label: 'All', value: '__all__' },
+            ...CATEGORIES.map((c) => ({ label: CATEGORY_LABELS[c], value: c })),
+          ]}
+          title="Reason"
+        />
       </View>
 
       {loading ? (
@@ -176,18 +172,6 @@ const styles = StyleSheet.create({
   toggleText: { color: '#c084fc', fontSize: 13, fontWeight: '600' },
   categoryWrap: { paddingHorizontal: 16, marginBottom: 12 },
   categoryLabel: { color: '#6b7280', fontSize: 11, marginBottom: 4, fontWeight: '600' },
-  categoryPickerContainer: {
-    backgroundColor: '#111827', borderRadius: 10, borderWidth: 1, borderColor: '#374151',
-    overflow: 'hidden',
-  },
-  categoryPicker: {
-    backgroundColor: 'transparent',
-    color: '#fff',
-    ...(Platform.OS === 'web'
-      ? { height: 40, paddingHorizontal: 12, fontSize: 14, borderWidth: 0 }
-      : {}),
-  },
-  categoryPickerItem: { color: '#fff', backgroundColor: '#111827', fontSize: 14 },
   resultsList: { flex: 1 },
   listContent: { padding: 16, gap: 10, paddingBottom: 40 },
   emptyText: { color: '#6b7280', textAlign: 'center', marginTop: 40 },
