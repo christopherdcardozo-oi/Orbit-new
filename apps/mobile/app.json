@@ -18,7 +18,8 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "appleTeamId": "KGAU27H9W6",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": ["remote-notification"],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
