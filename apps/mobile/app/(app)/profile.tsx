@@ -638,7 +638,7 @@ export default function ProfileTabScreen() {
 
             <TouchableOpacity
               style={styles.modalButton}
-              onPress={() => { setShowSettings(false); router.push('/legal/privacy'); }}
+              onPress={() => { setShowSettings(false); Linking.openURL('https://orghubs.com/apps/orbit/privacy'); }}
             >
               <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />
               <Text style={styles.modalButtonText}>Privacy Policy</Text>
@@ -646,7 +646,7 @@ export default function ProfileTabScreen() {
 
             <TouchableOpacity
               style={styles.modalButton}
-              onPress={() => { setShowSettings(false); router.push('/legal/terms'); }}
+              onPress={() => { setShowSettings(false); Linking.openURL('https://orghubs.com/apps/orbit/terms'); }}
             >
               <Ionicons name="document-text-outline" size={24} color="#fff" />
               <Text style={styles.modalButtonText}>Terms of Service</Text>

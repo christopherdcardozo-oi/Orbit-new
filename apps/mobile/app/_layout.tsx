@@ -134,16 +134,15 @@ export default function RootLayout() {
     // made chat completely unreachable regardless of what was on the
     // screen itself.
     const onChatScreen = (segments as string[])[0] === 'chat'
-    // Privacy Policy and Terms of Service live under /legal — they need
-    // to stay reachable from every entry point (signed-out signup footer,
-    // in-app Settings sheet, direct URL from anywhere), so the
-    // session-based redirect below must skip them the same way it skips
-    // the chat and signup routes.
-    const onLegalScreen = (segments as string[])[0] === 'legal'
-    // app/admin/* — same top-level-route situation as chat and legal
-    // above. The admin screens do their own is_admin gate on mount
-    // (see app/admin/_layout.tsx); this exemption just lets them
-    // render at all instead of bouncing straight back to '/(app)'.
+    // (An earlier onLegalScreen exemption for in-app /legal/{privacy,terms}
+    // screens lived here; both screens were removed once orghubs.com/apps/
+    // orbit/{privacy,terms} became the canonical hosted copies — one source
+    // of truth avoids the real compliance risk of the in-app copy drifting
+    // from what's shown on the App Store / Play Store product page.)
+    // app/admin/* — same top-level-route situation as chat above. The
+    // admin screens do their own is_admin gate on mount (see
+    // app/admin/_layout.tsx); this exemption just lets them render at
+    // all instead of bouncing straight back to '/(app)'.
     const onAdminScreen = (segments as string[])[0] === 'admin'
     const onSuspendedScreen = (segments as string[])[0] === 'suspended'
 
@@ -156,7 +155,7 @@ export default function RootLayout() {
       return
     }
 
-    if (session && !inAppGroup && !onSignupScreen && !onChatScreen && !onLegalScreen && !onAdminScreen && !onSuspendedScreen) {
+    if (session && !inAppGroup && !onSignupScreen && !onChatScreen && !onAdminScreen && !onSuspendedScreen) {
       router.replace('/(app)')
     } else if (!session && inAppGroup) {
       router.replace('/')

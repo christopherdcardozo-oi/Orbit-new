@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Linking } from 'react-native'
 import { Link, useRouter, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -364,13 +364,16 @@ export default function SignupScreen() {
               </TouchableOpacity>
 
               {/* Consent notice — visible before the user submits their
-                  email, links open the pages (they route out of signup
-                  and back is available). */}
+                  email. Now points at the canonical hosted copies at
+                  orghubs.com/apps/orbit/{terms,privacy} — one source of
+                  truth for App Store / Play Store compliance, and Apple's
+                  and Google's own scan bots read those exact URLs from
+                  the store listing too. */}
               <Text style={styles.legalNotice}>
                 By continuing you agree to our{' '}
-                <Link href="/legal/terms" style={styles.legalLink}>Terms of Service</Link>
+                <Text style={styles.legalLink} onPress={() => Linking.openURL('https://orghubs.com/apps/orbit/terms')}>Terms of Service</Text>
                 {' '}and{' '}
-                <Link href="/legal/privacy" style={styles.legalLink}>Privacy Policy</Link>
+                <Text style={styles.legalLink} onPress={() => Linking.openURL('https://orghubs.com/apps/orbit/privacy')}>Privacy Policy</Text>
                 .
               </Text>
             </>
