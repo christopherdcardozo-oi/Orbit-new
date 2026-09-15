@@ -218,9 +218,14 @@ export default function ProfileTabScreen() {
     }
   };
 
-  const TIP_URL = 'https://donate.stripe.com/00w5kwe1b2vp6TTbQa0oM01';
-  const handleTipDev = () => {
-    Linking.openURL(TIP_URL);
+  // Was a direct Stripe tip link — now points at Christopher's own hosted
+  // bio + Homeward/Orbit projects page, which itself has a donate link.
+  // Same button (icon, label "About the Dev"), one indirection more before
+  // reaching Stripe, but way more context for someone who taps it curious
+  // about who made the app.
+  const ABOUT_DEV_URL = 'https://orghubs.com/dev/christopher';
+  const handleAboutDev = () => {
+    Linking.openURL(ABOUT_DEV_URL);
   };
 
   const handleInviteFriend = async () => {
@@ -630,7 +635,7 @@ export default function ProfileTabScreen() {
 
             <TouchableOpacity
               style={styles.modalButton}
-              onPress={() => { setShowSettings(false); handleTipDev(); }}
+              onPress={() => { setShowSettings(false); handleAboutDev(); }}
             >
               <Ionicons name="heart-outline" size={24} color="#f472b6" />
               <Text style={[styles.modalButtonText, { color: '#f472b6' }]}>About the Dev</Text>
