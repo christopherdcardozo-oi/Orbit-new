@@ -64,6 +64,23 @@ export async function registerForPushNotificationsAsync(): Promise<void> {
       authStatus === messaging.AuthorizationStatus.PROVISIONAL;
     if (!enabled) return;
 
+    // iOS-only, required: getToken() needs a real APNs token bound
+    // first, or it fails with "No APNS token specified before
+    // fetching FCM Token" — a gap in the original implementation here.
+    // Suspected root cause of a real crash on iOS 26: this app runs
+    // React Native 0.86 on the New Architecture, which has a known bug
+    // (facebook/react-native#54859) where an NSException thrown inside
+    // a void-returning TurboModule method invoked on a background
+    // queue can't be caught by JS try/catch at all and hard-crashes
+    // the app (SIGABRT in ObjCTurboModule::performVoidMethodInvocation)
+    // — release builds only, so it never showed up in dev testing.
+    // Explicitly registering first is the documented fix upstream and
+    // avoids relying on getToken() to implicitly (and unreliably)
+    // trigger APNs registration itself.
+    if (Platform.OS === 'ios') {
+      await messaging().registerDeviceForRemoteMessages();
+    }
+
     // The token is what the server-side FCM V1 API targets. Alumni
     // stores per-device tokens keyed by the token itself; we do the
     // same via the unique(token) constraint on device_push_tokens.

@@ -601,6 +601,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     justifyContent: 'center',
+    // iOS's native Picker is always an inline spinning wheel (unlike
+    // Android, which shows a compact closed field and opens a wheel/menu
+    // only on tap) — with no explicit height it defaults to ~216pt,
+    // dwarfing every other field on the form. Android ignores this;
+    // its Picker sizes itself to its own compact content regardless.
+    ...(Platform.OS === 'ios' ? { height: 120 } : {}),
   },
   // Only used on the University picker — native Picker already shows
   // its own affordance (wheel/menu on tap); this caret is mainly for
