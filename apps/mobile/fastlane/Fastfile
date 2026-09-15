@@ -77,6 +77,71 @@ lane :prebuild do |options|
   end
 end
 
+# Patches the release signingConfig into the FRESHLY generated
+# android/app/build.gradle — every `prebuild` call above wipes and
+# regenerates that file from Expo's default template (debug-signed only),
+# so unlike Homeward (whose android/ is committed to git, signing config
+# hand-edited in once) this has to re-apply on every single build instead
+# of once. Reads real values from ~/.gradle/gradle.properties
+# (ORBIT_UPLOAD_STORE_FILE etc — outside the repo, never touches git),
+# same property-file mechanism Gradle already uses for Homeward/GOA.
+# No-ops harmlessly if that file/property doesn't exist, so a machine
+# without it still gets a debug-signed build instead of a hard failure.
+def inject_android_signing
+  path = 'android/app/build.gradle'
+  path = "../#{path}" unless File.exist?(path)
+  UI.user_error!('Could not find android/app/build.gradle to inject signing config') unless File.exist?(path)
+
+  contents = File.read(path)
+
+  # NOTE on indentation: written as explicit literal lines, not a squiggly
+  # heredoc (<<~) — squiggly strips ALL common leading whitespace, which
+  # flattened this to column 0 and produced ugly (though functionally
+  # harmless) output the first time this was tested against a real
+  # generated build.gradle.
+  release_signing_config =
+    "        release {\n" \
+    "            if (project.hasProperty(\"ORBIT_UPLOAD_STORE_FILE\")) {\n" \
+    "                storeFile file(ORBIT_UPLOAD_STORE_FILE)\n" \
+    "                storePassword ORBIT_UPLOAD_STORE_PASSWORD\n" \
+    "                keyAlias ORBIT_UPLOAD_KEY_ALIAS\n" \
+    "                keyPassword ORBIT_UPLOAD_KEY_PASSWORD\n" \
+    "            }\n" \
+    "        }\n"
+
+  # Insert the release signingConfig right after the default debug{} one,
+  # inside the same signingConfigs {} block Expo's template always emits.
+  unless contents.include?('ORBIT_UPLOAD_STORE_FILE')
+    contents = contents.sub(
+      /(    signingConfigs \{\n        debug \{[^}]*\}\n)/,
+      "\\1#{release_signing_config}",
+    )
+  end
+
+  # Point the release buildType at the new config when the property is
+  # set, falling back to debug signing (Expo's own default) otherwise —
+  # so a machine without the keystore still produces a working, just
+  # not Play-uploadable, build rather than failing outright.
+  #
+  # Anchored on the Expo-template comment that ONLY appears directly above
+  # buildTypes.release's signingConfig line — NOT a bare `release {` match.
+  # First version of this used that bare match and it broke: once the
+  # signingConfigs.release block above also contains the word "release",
+  # a plain "release { ... signingConfig signingConfigs.debug" regex
+  # matches the FIRST such occurrence in the file, which after insertion
+  # is buildTypes.debug (which sits between the two "release" mentions),
+  # not buildTypes.release — silently leaving the real release build
+  # still debug-signed while corrupting the debug config instead. Caught
+  # by testing against a real generated file before trusting this.
+  contents = contents.sub(
+    %r{(// Caution! In production, you need to generate your own keystore file\.\n\s*// see https://reactnative\.dev/docs/signed-apk-android\.\n\s*)signingConfig signingConfigs\.debug},
+    "\\1signingConfig project.hasProperty(\"ORBIT_UPLOAD_STORE_FILE\") ? signingConfigs.release : signingConfigs.debug",
+  )
+
+  File.write(path, contents)
+  UI.message('Injected Orbit release signingConfig into android/app/build.gradle')
+end
+
 def ios_api_key
   app_store_connect_api_key(
     key_id: ENV['ASC_KEY_ID'],
@@ -152,6 +217,7 @@ platform :android do
   desc 'Build and upload a new build to the Play Console Internal Testing track'
   lane :beta do
     prebuild(platform: 'android')
+    inject_android_signing
     # NOTE: a brand-new app's very first-ever Play Console upload must be a
     # manual drag-and-drop in the Play Console UI — Google's API rejects the
     # first release for a new app. Once that's done once, this lane works
@@ -171,6 +237,7 @@ platform :android do
   desc 'Build and upload a production-candidate build to the Play Console, staged as a draft. Does NOT start the rollout — that click stays manual.'
   lane :release do
     prebuild(platform: 'android')
+    inject_android_signing
     set_android_version_code(latest_android_version_code + 1)
     gradle(task: 'bundle', build_type: 'Release', project_dir: 'android/')
     upload_to_play_store(
