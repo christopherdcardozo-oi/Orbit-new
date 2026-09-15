@@ -13,7 +13,7 @@
       "backgroundColor": "#030712"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.orghubs.orbit",
       "googleServicesFile": "./GoogleService-Info.plist",
       "appleTeamId": "KGAU27H9W6",
@@ -54,7 +54,8 @@
           }
         }
       ],
-      "./plugins/with-ios-scene-delegate.js"
+      "./plugins/with-ios-scene-delegate.js",
+      "./plugins/with-android-strip-alert-window.js"
     ]
   }
 }
