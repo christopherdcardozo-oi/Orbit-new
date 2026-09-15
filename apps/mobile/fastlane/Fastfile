@@ -86,7 +86,31 @@ lane :prebuild do |options|
   Dir.chdir('..') do
     args = ['npx', 'expo', 'prebuild', '--clean']
     args += ['--platform', options[:platform]] if options[:platform]
-    sh(*args)
+    # Hit this for real on 2026-09-14: we run under `bundle exec fastlane`,
+    # so BUNDLE_GEMFILE (pointing at THIS Gemfile, which only has `fastlane`)
+    # leaks into every subprocess. `expo prebuild`'s CocoaPods step shells
+    # out to `pod`, which on this machine is an rbenv shim — and that shim
+    # honors BUNDLE_GEMFILE too, so it tried to run `pod` as if it had to be
+    # a gem bundled in *our* Gemfile and failed with "cocoapods is not
+    # currently included in the bundle". Made it worse: `expo prebuild`
+    # logged that failure as a mere warning and pressed on, so the real
+    # symptom one step downstream was build_app failing on a missing
+    # ios/Orbit.xcworkspace that pod install never got to generate.
+    # Bundler.with_unbundled_env strips the Bundler-specific env vars for
+    # this subprocess only, so `pod` resolves and runs like a normal
+    # standalone gem, the same as running `npx expo prebuild` by hand from
+    # a plain terminal.
+    Bundler.with_unbundled_env do
+      # with_unbundled_env resets ENV to Bundler's pre-boot snapshot, which
+      # wipes out the LANG/LC_ALL UTF-8 fix set at the top of this file —
+      # reintroducing the exact same CocoaPods `unicode_normalize`
+      # Encoding::CompatibilityError crash that fix exists for. Re-apply it
+      # inside the unbundled block too.
+      %w[LANG LC_ALL].each do |var|
+        ENV[var] = 'en_US.UTF-8' unless ENV[var].to_s.upcase.include?('UTF-8')
+      end
+      sh(*args)
+    end
   end
 end
 
@@ -236,6 +260,13 @@ platform :ios do
       scheme: 'Orbit',
       export_method: 'app-store',
       export_options: { signingStyle: 'automatic' },
+      # Archiving succeeds with just DEVELOPMENT_TEAM set (via app.json's
+      # ios.appleTeamId), but the separate export/-exportArchive step that
+      # packages the .ipa needs its own permission to auto-manage
+      # provisioning through the App Store Connect API key — without this
+      # flag it fails with "no provisioning profile mapping was provided"
+      # even though signingStyle is already 'automatic'.
+      xcargs: '-allowProvisioningUpdates',
     )
     upload_to_testflight(skip_waiting_for_build_processing: true)
   end
@@ -251,6 +282,7 @@ platform :ios do
       scheme: 'Orbit',
       export_method: 'app-store',
       export_options: { signingStyle: 'automatic' },
+      xcargs: '-allowProvisioningUpdates',  # see beta lane comment
     )
     upload_to_app_store(
       submit_for_review: false,  # deliberate — see file header

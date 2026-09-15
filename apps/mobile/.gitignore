@@ -51,3 +51,9 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/
 fastlane/test_output/
+
+# Build outputs — gym (build_app) drops these at the project root, outside
+# ios/ (already ignored above). The .aab itself lands under android/app/build/,
+# already covered by the /android ignore rule.
+*.ipa
+*.app.dSYM.zip

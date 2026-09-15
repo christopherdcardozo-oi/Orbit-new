@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native'
 import { Link, useRouter } from 'expo-router'
 import { Picker } from '@react-native-picker/picker'
@@ -17,6 +17,18 @@ export default function LoginScreen() {
   // people never looked at the picker at all and could pick the wrong
   // campus without noticing. Left blank until they explicitly choose.
   const [selectedUniversity, setSelectedUniversity] = useState('')
+
+  // Single flat, unconditional list of {label, value} for the Picker —
+  // see the comment where this is rendered for why it can't branch.
+  const universityPickerItems = useMemo(() => {
+    if (universitiesLoading) return [{ label: 'Loading campuses…', value: '' }]
+    if (universities.length === 0) return [{ label: 'No campuses available', value: '' }]
+    return [
+      { label: '— Select your university —', value: '' },
+      ...universities.map((u) => ({ label: u.university_name, value: u.email_domain })),
+    ]
+  }, [universitiesLoading, universities])
+
   const [fullEmail, setFullEmail] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -147,18 +159,18 @@ export default function LoginScreen() {
                   itemStyle={styles.pickerItem}
                   enabled={!universitiesLoading && universities.length > 0}
                 >
-                  {universitiesLoading ? (
-                    <Picker.Item label="Loading campuses…" value="" />
-                  ) : universities.length === 0 ? (
-                    <Picker.Item label="No campuses available" value="" />
-                  ) : (
-                    <>
-                      <Picker.Item label="— Select your university —" value="" />
-                      {universities.map((u) => (
-                        <Picker.Item key={u.email_domain} label={u.university_name} value={u.email_domain} />
-                      ))}
-                    </>
-                  )}
+                  {/* @react-native-picker/picker has a known Android-only bug
+                      (github.com/react-native-picker/picker/issues/175) where
+                      switching between differently-shaped conditional
+                      children (a lone Item vs. a Fragment of Items) miscounts
+                      children on the native side and can break the whole
+                      list, rendering literal "undefined" instead of real
+                      items. Fix: always render ONE flat, unconditional array
+                      of Picker.Item — compute it in JS first, never branch
+                      the JSX itself. */}
+                  {universityPickerItems.map((item) => (
+                    <Picker.Item key={item.value} label={item.label} value={item.value} />
+                  ))}
                 </Picker>
                 <Ionicons
                   name="chevron-down"
