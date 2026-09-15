@@ -61,6 +61,19 @@ if ENV['JAVA_HOME'].to_s.empty? || !File.exist?(File.join(ENV['JAVA_HOME'].to_s,
   ENV['JAVA_HOME'] = found if found
 end
 
+# Same story for ANDROID_HOME — set in ~/.zshrc for an interactive login shell,
+# but absent from the non-interactive shell fastlane actually runs in here,
+# which makes the Android Gradle plugin fail with "SDK location not found"
+# even though the SDK is installed and this exact machine builds fine from
+# a terminal. expo prebuild also needs it set to write android/local.properties.
+if ENV['ANDROID_HOME'].to_s.empty? || !Dir.exist?(ENV['ANDROID_HOME'].to_s)
+  candidate = File.join(Dir.home, 'Library/Android/sdk')
+  if Dir.exist?(candidate)
+    ENV['ANDROID_HOME'] = candidate
+    ENV['ANDROID_SDK_ROOT'] = candidate
+  end
+end
+
 APP_ID = 'com.orghubs.orbit'
 
 # Regenerates ios/ and android/ from app.json + the Expo config plugins —
@@ -142,6 +155,42 @@ def inject_android_signing
   UI.message('Injected Orbit release signingConfig into android/app/build.gradle')
 end
 
+# expo-notifications' config plugin and @react-native-firebase/messaging's own
+# bundled AndroidManifest.xml both declare
+# com.google.firebase.messaging.default_notification_color — ours pointing at
+# our brand purple (@color/notification_icon_color, set via expo-notifications'
+# `color` option in app.json), firebase-messaging's own pointing at its default
+# (@color/white). The Android manifest merger treats that as a hard conflict
+# and fails the release build:
+#   "Attribute meta-data#...default_notification_color@resource value=(...)
+#    is also present at [:react-native-firebase_messaging] ... value=(@color/white)
+#    Suggestion: add 'tools:replace="android:resource"' to <meta-data> element"
+#
+# Tried doing this the "proper" way first — a local Expo config plugin using
+# withAndroidManifest — but expo-notifications' own manifest mod runs AFTER
+# a plugin listed later in app.json's plugins array (mod ordering isn't
+# simply top-to-bottom), so ours ran first and found nothing to patch yet.
+# Same pattern as inject_android_signing below: patch the plain-text
+# generated file directly, right after prebuild, when it's guaranteed final.
+def inject_manifest_merge_fix
+  path = 'android/app/src/main/AndroidManifest.xml'
+  path = "../#{path}" unless File.exist?(path)
+  UI.user_error!('Could not find AndroidManifest.xml to patch manifest merge conflict') unless File.exist?(path)
+
+  contents = File.read(path)
+  target = '<meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_icon_color"/>'
+  replacement = '<meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_icon_color" tools:replace="android:resource"/>'
+
+  if contents.include?(target)
+    File.write(path, contents.sub(target, replacement))
+    UI.message('Patched AndroidManifest.xml to resolve firebase-messaging notification-color merge conflict')
+  elsif contents.include?('tools:replace="android:resource"')
+    UI.message('AndroidManifest.xml already patched for notification-color merge conflict')
+  else
+    UI.user_error!('Expected default_notification_color meta-data not found — expo-notifications output may have changed, update inject_manifest_merge_fix')
+  end
+end
+
 def ios_api_key
   app_store_connect_api_key(
     key_id: ENV['ASC_KEY_ID'],
@@ -214,9 +263,20 @@ platform :ios do
 end
 
 platform :android do
+  desc 'Build a release .aab locally without uploading — for the mandatory manual first Play Console release (Google rejects a new app\'s first release via API), or any time you just want the artifact. versionCode defaults to 1 since latest_android_version_code queries existing Play tracks, which don\'t exist yet for a brand-new app; pass version_code: N to override.'
+  lane :build do |options|
+    prebuild(platform: 'android')
+    inject_manifest_merge_fix
+    inject_android_signing
+    set_android_version_code(options[:version_code] || 1)
+    gradle(task: 'bundle', build_type: 'Release', project_dir: 'android/')
+    UI.success("Built android/app/build/outputs/bundle/release/app-release.aab — upload it manually in Play Console.")
+  end
+
   desc 'Build and upload a new build to the Play Console Internal Testing track'
   lane :beta do
     prebuild(platform: 'android')
+    inject_manifest_merge_fix
     inject_android_signing
     # NOTE: a brand-new app's very first-ever Play Console upload must be a
     # manual drag-and-drop in the Play Console UI — Google's API rejects the
@@ -237,6 +297,7 @@ platform :android do
   desc 'Build and upload a production-candidate build to the Play Console, staged as a draft. Does NOT start the rollout — that click stays manual.'
   lane :release do
     prebuild(platform: 'android')
+    inject_manifest_merge_fix
     inject_android_signing
     set_android_version_code(latest_android_version_code + 1)
     gradle(task: 'bundle', build_type: 'Release', project_dir: 'android/')
