@@ -633,7 +633,7 @@ export default function ProfileTabScreen() {
               onPress={() => { setShowSettings(false); handleTipDev(); }}
             >
               <Ionicons name="heart-outline" size={24} color="#f472b6" />
-              <Text style={[styles.modalButtonText, { color: '#f472b6' }]}>Tip the Dev</Text>
+              <Text style={[styles.modalButtonText, { color: '#f472b6' }]}>About the Dev</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
