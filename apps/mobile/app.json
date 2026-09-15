@@ -52,7 +52,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "./plugins/with-ios-scene-delegate.js"
     ]
   }
 }
