@@ -1322,6 +1322,15 @@ export default function ChatScreen() {
 
       {/* Report modal */}
       <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => setReportOpen(false)}>
+        {/* iOS doesn't auto-resize Modal content for the keyboard —
+            without this, the "Any details?" TextInput near the bottom
+            of the sheet gets covered outright when the keyboard opens.
+            behavior="padding" pads the bottom by the keyboard height;
+            since menuBackdrop is flex:1 + justifyContent:'flex-end',
+            that padding pushes the whole sheet up above the keyboard
+            instead of squashing it. Android's own keyboard resize
+            handles this natively, so this is iOS-only. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <Pressable style={styles.menuBackdrop} onPress={() => setReportOpen(false)}>
           <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>Report and Block {match.partnerAlias}</Text>
@@ -1371,6 +1380,7 @@ export default function ChatScreen() {
             </View>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Block confirmation */}
@@ -1403,6 +1413,9 @@ export default function ChatScreen() {
           it. Reciprocity is per-type: your Instagram unlocks theirs
           only if they've also shared Instagram. */}
       <Modal visible={revealModalOpen} transparent animationType="slide" onRequestClose={() => setRevealModalOpen(false)}>
+        {/* Same iOS keyboard-covering-the-TextInput issue as the report
+            modal above — see the comment there. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <Pressable style={styles.menuBackdrop} onPress={() => setRevealModalOpen(false)}>
           <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>Share your contact</Text>
@@ -1495,6 +1508,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Mini profile — reveals partner's personality answers + basics.
