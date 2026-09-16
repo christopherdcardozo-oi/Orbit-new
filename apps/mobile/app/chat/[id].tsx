@@ -1172,9 +1172,18 @@ export default function ChatScreen() {
         )
       })()}
 
+      {/* behavior was `undefined` on Android on the assumption that
+          windowSoftInputMode=adjustResize on the Activity would resize
+          this content natively when the keyboard opens. That stopped
+          being true once Expo SDK 54+ made edge-to-edge mandatory on
+          Android (content now draws under the system bars, so the OS
+          no longer shrinks it for us) — the composer was getting
+          covered by the keyboard while typing a plain message, not
+          just inside the Report/Share Contact modals. "height" fixes
+          both. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Messages column disintegrates first: bubbles fade + drift
