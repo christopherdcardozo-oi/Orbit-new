@@ -373,10 +373,17 @@ async function runMatchmakingForCampus(
     // Daily reset: expire this campus's active matches so everyone is
     // eligible for a fresh match today. Scoped to this campus's profile
     // ids only — other campuses' matches are untouched.
+    //
+    // is_persistent = false guard: migration 054 opts specific pairs
+    // out of nightly expiry — right now that's just the App Store /
+    // Play reviewer demo pair (Sunil ↔ review@orghubs.com, set up by
+    // setup-review-account). Skipping them here is the whole runtime
+    // half of that feature; the setup function handles the flip.
     const { error: expireError } = await supabase
       .from('matches')
       .update({ status: 'expired' })
       .eq('status', 'active')
+      .eq('is_persistent', false)
       .in('user1_id', domainProfileIds);
     if (expireError) {
       console.error(`[reset-matches] ${domain}: failed to expire matches: ${expireError.message}`);

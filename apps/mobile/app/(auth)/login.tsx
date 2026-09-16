@@ -8,6 +8,15 @@ import { useActiveUniversities } from '../../lib/universities'
 import CosmicBackground from '../../components/CosmicBackground'
 import SpamHint from '../../components/SpamHint'
 
+// App Store / Play reviewer demo account (see supabase/functions/
+// verify-review-otp/index.ts). Typing this exact email into the login
+// screen bypasses both the send-OTP call (skip: nothing gets emailed to
+// the domain we don't own) and the ordinary verifyOtp call (skip: our
+// own edge function trades a fixed test code for a real session).
+// Everything else about the login screen — university picker, error
+// banners, otp step — behaves identically to a real user.
+const REVIEW_EMAIL = 'review@orghubs.com'
+
 export default function LoginScreen() {
   const router = useRouter()
   const { universities, loading: universitiesLoading } = useActiveUniversities()
@@ -55,6 +64,19 @@ export default function LoginScreen() {
     const emailStr = fullEmail.toLowerCase().trim()
 
     setLoading(true)
+
+    // App Store / Play reviewer demo account — see supabase/functions/
+    // verify-review-otp/index.ts for the whole rationale. This email
+    // is deliberately never delivered a real OTP: any signInWithOtp
+    // call for it would land in a mailbox we don't own, and the
+    // reviewer would be stuck. Jump directly to the code-entry step;
+    // handleVerifyCode has the matching branch that turns their fixed
+    // code into a real session server-side.
+    if (emailStr === REVIEW_EMAIL) {
+      setLoading(false)
+      setOtpPhase(true)
+      return
+    }
 
     // Emails matching the picked campus are always fine; anything else
     // has to be explicitly allowlisted server-side (admin_allowlist) or
@@ -109,6 +131,32 @@ export default function LoginScreen() {
     setErrorMessage('')
     setLoading(true)
     const emailStr = fullEmail.toLowerCase().trim()
+
+    // App Store / Play reviewer bypass — matched pair with handleSendCode
+    // above. The verify-review-otp edge function strictly checks
+    // email==REVIEW_EMAIL && code==REVIEW_OTP; if it accepts, it hands
+    // back a magiclink token_hash we consume right here to mint a real
+    // session (same shape as any other login — app/_layout.tsx's
+    // onAuthStateChange picks it up and redirects to /(app) with no
+    // idea this ever went through a different path).
+    if (emailStr === REVIEW_EMAIL) {
+      const { data, error: fnError } = await supabase.functions.invoke('verify-review-otp', {
+        body: { email: emailStr, code },
+      })
+      if (fnError || !data?.token_hash) {
+        setLoading(false)
+        setErrorMessage('Invalid code')
+        return
+      }
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash: data.token_hash,
+        type: 'magiclink',
+      })
+      setLoading(false)
+      if (verifyError) setErrorMessage(verifyError.message)
+      return
+    }
+
     const { error } = await supabase.auth.verifyOtp({
       email: emailStr,
       token: code,
