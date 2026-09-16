@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable, KeyboardAvoidingView, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -228,6 +228,12 @@ export default function ProfileTabScreen() {
     Linking.openURL(ABOUT_DEV_URL);
   };
 
+  // Both native/web branches below were previously gated on
+  // `Platform.OS === 'web'`, so on iOS/Android neither ever ran and every
+  // tap fell straight through to the mailto: fallback — "Invite a Campus
+  // Bud" always opened Mail instead of the share sheet. RN's Share API is
+  // the native equivalent of navigator.share (Messages/WhatsApp/etc, not
+  // just email).
   const handleInviteFriend = async () => {
     // Pre-fills the signup URL with the user's campus so their friends
     // land on the right university picker pre-selected. If the campus
@@ -236,12 +242,21 @@ export default function ProfileTabScreen() {
     const campus = profile?.email_domain;
     const url = campus ? `${base}/signup?campus=${encodeURIComponent(campus)}` : `${base}/signup`;
     const text = `Try Orbit — anonymous campus-only match once a day, reset at midnight. ${url}`;
-    if (Platform.OS === 'web' && (navigator as any).share) {
+
+    if (Platform.OS !== 'web') {
+      try {
+        await Share.share({ message: text, title: 'Orbit' }, { dialogTitle: 'Invite a Campus Bud' });
+      } catch (e) {
+        console.warn('Share failed:', e);
+      }
+      return;
+    }
+
+    if ((navigator as any).share) {
       try { await (navigator as any).share({ title: 'Orbit', text, url }); return; } catch { /* user cancelled */ }
     }
-    // Fallback: copy to clipboard (web) or open a share sheet via
-    // Linking on native (mailto: works cross-platform without extra deps).
-    if (Platform.OS === 'web' && navigator.clipboard) {
+    // Fallback: copy to clipboard (web).
+    if (navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(text);
         Alert.alert('Link copied', 'Share it with a friend from your campus.');

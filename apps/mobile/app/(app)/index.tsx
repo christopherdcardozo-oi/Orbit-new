@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Alert, Modal, Share } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -164,11 +164,6 @@ export default function ChatTabScreen() {
 
   // Three real tiers now — 'neutral' ("Meh") is an actual recorded
   // rating, not a dismiss-without-rating action like the old "Skip" was.
-  // Mirror of the profile-screen invite. Kept in sync with the
-  // handleInviteFriend implementation in apps/mobile/app/(app)/profile.tsx —
-  // if you change one, change the other. Shares web navigator.share
-  // when available, falls back to clipboard on desktop web, or mailto
-  // on native.
   const acceptSafetyDisclaimer = async () => {
     if (!userId || !activeMatch) return;
     setSafetyAcking(true);
@@ -188,16 +183,35 @@ export default function ChatTabScreen() {
     router.push(`/chat/${matchId}`);
   };
 
+  // Mirror of the profile-screen invite. Kept in sync with the
+  // handleInviteFriend implementation in apps/mobile/app/(app)/profile.tsx —
+  // if you change one, change the other.
+  //
+  // Both branches were previously gated on `Platform.OS === 'web'`, so on
+  // iOS/Android neither ever ran and every native tap fell straight
+  // through to the mailto: fallback — "Invite a Campus Bud" always opened
+  // Mail instead of the share sheet. RN's Share API is the native
+  // equivalent of navigator.share (Messages/WhatsApp/etc, not just email).
   const handleInviteFriend = async () => {
     const base = 'https://orbit.orghubs.com';
     const url = campusDomain
       ? `${base}/signup?campus=${encodeURIComponent(campusDomain)}`
       : `${base}/signup`;
     const text = `Try Orbit — anonymous campus-only match once a day, reset at midnight. ${url}`;
-    if (Platform.OS === 'web' && (navigator as any).share) {
+
+    if (Platform.OS !== 'web') {
+      try {
+        await Share.share({ message: text, title: 'Orbit' }, { dialogTitle: 'Invite a Campus Bud' });
+      } catch (e) {
+        console.warn('Share failed:', e);
+      }
+      return;
+    }
+
+    if ((navigator as any).share) {
       try { await (navigator as any).share({ title: 'Orbit', text, url }); return; } catch { /* cancelled */ }
     }
-    if (Platform.OS === 'web' && navigator.clipboard) {
+    if (navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(text);
         Alert.alert('Link copied', 'Share it with a friend from your campus.');
