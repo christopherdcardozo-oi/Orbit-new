@@ -63,7 +63,34 @@ Deno.serve(async (req) => {
 
   const trace: Record<string, unknown> = {};
 
-  // --- 1. Create or reuse the review auth user ------------------------
+  // --- 1. Add to admin_allowlist FIRST -------------------------------
+  // Order matters here: the on_auth_user_created trigger fires on the
+  // createUser call in step 2 and runs handle_new_user(), which looks up
+  // admin_allowlist for NEW.email — if there's no row, and the email's
+  // domain isn't in university_config's active list, the trigger raises
+  // 'Only active campus emails are allowed' and the whole createUser
+  // fails with the generic "Database error creating new user". Adding
+  // the allowlist row before the user makes the trigger find it and
+  // route the new user onto REVIEW_CAMPUS (iastate.edu) with
+  // is_admin=TRUE, exactly what we want.
+  {
+    const { error: allowErr } = await supabase
+      .from('admin_allowlist')
+      .upsert(
+        { email: REVIEW_EMAIL, campus_email_domain: REVIEW_CAMPUS, note: 'App Store / Play reviewer demo account' },
+        { onConflict: 'email' },
+      );
+    if (allowErr) return json({ error: `admin_allowlist upsert: ${allowErr.message}` }, 500);
+    trace.admin_allowlist = 'ok';
+  }
+
+  // --- 2. Create or reuse the review auth user -----------------------
+  // With the allowlist row in place, the on_auth_user_created trigger
+  // sees REVIEW_EMAIL, resolves it to iastate.edu, and inserts a basic
+  // profiles row with a random cosmic-adjective alias + avatar. Step 3
+  // below then upserts the same profiles row with the fields we
+  // actually want (alias 'AppStoreDude666' plus personality/hobbies/etc)
+  // — the trigger's row is scaffolding we overwrite.
   let reviewUserId: string;
   {
     // Supabase auth admin doesn't have a "get user by email" convenience,
@@ -87,18 +114,6 @@ Deno.serve(async (req) => {
   }
   trace.review_user_id = reviewUserId;
 
-  // --- 2. Add to admin_allowlist -------------------------------------
-  {
-    const { error: allowErr } = await supabase
-      .from('admin_allowlist')
-      .upsert(
-        { email: REVIEW_EMAIL, campus_email_domain: REVIEW_CAMPUS, note: 'App Store / Play reviewer demo account' },
-        { onConflict: 'email' },
-      );
-    if (allowErr) return json({ error: `admin_allowlist upsert: ${allowErr.message}` }, 500);
-    trace.admin_allowlist = 'ok';
-  }
-
   // --- 3. Upsert the profile row -------------------------------------
   {
     // Personality shape follows lib/personality.ts — 4 questions, first
@@ -116,7 +131,7 @@ Deno.serve(async (req) => {
           gender: 'Other',
           major: 'Computer Science',
           year: 'Senior',
-          personality_answers: [
+          personality: [
             'A mix of both (Ambivert)',
             'Logic and facts',
             'Spontaneous and flexible',
@@ -124,6 +139,7 @@ Deno.serve(async (req) => {
           ],
           hobbies: ['Gaming'],
           activities: [],
+          year_in_school: 'Senior',
           is_admin: true,
           is_active: true,
         },
@@ -146,68 +162,48 @@ Deno.serve(async (req) => {
 
   // --- 5. Ensure a persistent match exists ---------------------------
   {
-    // Look for any existing match (any status) between this exact pair.
-    // Order doesn't matter — a match row can have user1/user2 in either
-    // slot, so we check both permutations.
+    // Direct INSERT rather than the admin_schedule_match RPC because
+    // that RPC has an auth.uid() -> admin_users check that fails when
+    // called from an edge function running under the service role
+    // (no session, no auth.uid). We have service role bypass on RLS
+    // anyway, so an explicit INSERT + immediate is_persistent flip is
+    // simpler than impersonating an admin JWT. Skips the match_history
+    // insert admin_schedule_match does; a persistent demo pair should
+    // not consume a slot in the 30-day no-repeat window either user
+    // would care about.
+    const [u1, u2] = [reviewUserId, sunilUserId].sort();
     const { data: existing, error: existingErr } = await supabase
       .from('matches')
       .select('id, status, is_persistent')
-      .or(
-        `and(user1_id.eq.${reviewUserId},user2_id.eq.${sunilUserId}),` +
-        `and(user1_id.eq.${sunilUserId},user2_id.eq.${reviewUserId})`,
-      );
+      .eq('user1_id', u1)
+      .eq('user2_id', u2);
     if (existingErr) return json({ error: `match lookup: ${existingErr.message}` }, 500);
 
-    // Prefer the active row if one exists; otherwise take any, we'll
-    // reactivate it below.
-    const active = existing?.find((m) => m.status === 'active');
-    const anyExisting = active ?? existing?.[0];
-
     let matchId: string;
-    if (anyExisting) {
-      // Flip the existing row to active + persistent no matter what
-      // state it was in.
+    if (existing && existing.length > 0) {
+      const row = existing.find((m) => m.status === 'active') ?? existing[0];
       const { error: updateErr } = await supabase
         .from('matches')
-        .update({
-          status: 'active',
-          is_persistent: true,
-          expires_at: '2099-12-31T00:00:00Z',
-        })
-        .eq('id', anyExisting.id);
+        .update({ status: 'active', is_persistent: true, expires_at: '2099-12-31T00:00:00Z' })
+        .eq('id', row.id);
       if (updateErr) return json({ error: `match update: ${updateErr.message}` }, 500);
-      matchId = anyExisting.id;
+      matchId = row.id;
       trace.match = 'reactivated_and_pinned';
     } else {
-      // No existing row — create one via admin_schedule_match, which
-      // handles ordering + icebreaker text + expires_at + campus
-      // consistency for us. We then upgrade its expiry and persistence.
-      const { error: scheduleErr } = await supabase.rpc('admin_schedule_match', {
-        p_user1_id: reviewUserId,
-        p_user2_id: sunilUserId,
-      });
-      if (scheduleErr) return json({ error: `admin_schedule_match: ${scheduleErr.message}` }, 500);
-
-      // Read back the just-created active match.
-      const { data: created, error: readErr } = await supabase
+      const { data: inserted, error: insertErr } = await supabase
         .from('matches')
+        .insert({
+          user1_id: u1,
+          user2_id: u2,
+          status: 'active',
+          icebreaker: '🛠️ App Store / Play reviewer demo match. Say hi!',
+          expires_at: '2099-12-31T00:00:00Z',
+          is_persistent: true,
+        })
         .select('id')
-        .eq('status', 'active')
-        .or(
-          `and(user1_id.eq.${reviewUserId},user2_id.eq.${sunilUserId}),` +
-          `and(user1_id.eq.${sunilUserId},user2_id.eq.${reviewUserId})`,
-        )
-        .limit(1)
-        .maybeSingle();
-      if (readErr || !created) return json({ error: `match reread: ${readErr?.message ?? 'not found'}` }, 500);
-
-      const { error: pinErr } = await supabase
-        .from('matches')
-        .update({ is_persistent: true, expires_at: '2099-12-31T00:00:00Z' })
-        .eq('id', created.id);
-      if (pinErr) return json({ error: `pin match: ${pinErr.message}` }, 500);
-
-      matchId = created.id;
+        .single();
+      if (insertErr || !inserted) return json({ error: `match insert: ${insertErr?.message ?? 'no row returned'}` }, 500);
+      matchId = inserted.id;
       trace.match = 'created_and_pinned';
     }
     trace.match_id = matchId;
