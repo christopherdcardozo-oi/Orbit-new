@@ -5,7 +5,7 @@
 // queryable from the client even for admins.
 
 import { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Modal, Alert, Switch, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Modal, Alert, Switch, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -261,6 +261,12 @@ export default function AdminUsers() {
       {/* Delete confirmation — typed-alias guard, not just a tap-through
           Alert, since this is the one truly irreversible action here. */}
       <Modal visible={!!deleteTarget} transparent animationType="fade" onRequestClose={closeDeleteModal}>
+        {/* modalOverlay centers its content by empty vertical space, which
+            isn't recomputed for the keyboard unless wrapped here — RN's
+            Modal is a separate native window on Android and "center"
+            isn't keyboard-aware on iOS either without this. Same bug as
+            admin/tools.tsx's confirmation modals. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <Pressable style={styles.modalOverlay} onPress={closeDeleteModal}>
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
             {deleteTarget && (
@@ -305,6 +311,7 @@ export default function AdminUsers() {
             )}
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

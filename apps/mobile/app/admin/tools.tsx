@@ -4,7 +4,7 @@
 // admin_users authorization + campus scope internally.
 
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Pressable, Modal, ScrollView, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Pressable, Modal, ScrollView, Switch, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -339,7 +339,15 @@ export default function AdminTools() {
   }
 
   return (
-    <View style={styles.container}>
+    // This screen never had any keyboard handling at all — the text
+    // inputs deep in the scroll content (campus name/domain, Schedule
+    // Match, Broadcast title/body) just sat wherever the keyboard
+    // pushed the viewport, getting covered on both platforms. "height"
+    // on Android for the same edge-to-edge reason as chat/[id].tsx.
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.push('/admin')} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color="#fff" />
@@ -348,7 +356,7 @@ export default function AdminTools() {
         <View style={{ width: 26 }} />
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* ---------- Campuses (global admins only) ---------- */}
         {isGlobalAdmin && (
           <CollapsibleSection
@@ -622,6 +630,12 @@ export default function AdminTools() {
           action in the whole panel (every active user in scope gets a
           push, right now, no undo), so a single tap isn't enough. */}
       <Modal visible={confirmOpen} transparent animationType="fade" onRequestClose={closeConfirm}>
+        {/* modalOverlay centers its content by empty vertical space, which
+            isn't recomputed for the keyboard unless wrapped here — RN's
+            Modal is a separate native window on Android (doesn't inherit
+            the screen's keyboard handling) and even on iOS "center" isn't
+            keyboard-aware on its own. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <Pressable style={styles.modalOverlay} onPress={closeConfirm}>
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
             <Ionicons name="megaphone-outline" size={28} color="#f59e0b" style={{ alignSelf: 'center', marginBottom: 8 }} />
@@ -659,6 +673,7 @@ export default function AdminTools() {
             </TouchableOpacity>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Delete campus — typed-domain guard, same pattern as user
@@ -666,6 +681,9 @@ export default function AdminTools() {
           lives server-side in admin_delete_campus; this just prevents
           a stray tap. */}
       <Modal visible={campusDeleteOpen} transparent animationType="fade" onRequestClose={closeCampusDelete}>
+        {/* Same keyboard-centering issue as the broadcast confirm modal
+            above. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <Pressable style={styles.modalOverlay} onPress={closeCampusDelete}>
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
             {selectedUniversity && (
@@ -711,8 +729,9 @@ export default function AdminTools() {
             )}
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

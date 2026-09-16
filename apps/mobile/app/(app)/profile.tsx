@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable, KeyboardAvoidingView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -369,7 +369,13 @@ export default function ProfileTabScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    // No keyboard handling here before — editing Major (mid-scroll) got
+    // covered by the keyboard on both platforms, same bug class as
+    // chat/[id].tsx and admin/tools.tsx.
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <CosmicBackground />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 60, paddingHorizontal: 16 }}>
         
@@ -691,6 +697,9 @@ export default function ProfileTabScreen() {
 
       {/* Feedback Modal */}
       <Modal visible={showFeedback} animationType="slide" transparent={true} onRequestClose={() => setShowFeedback(false)}>
+        {/* Modal is its own native window — the screen-level
+            KeyboardAvoidingView above doesn't reach into it. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <Pressable style={styles.modalOverlay} onPress={() => setShowFeedback(false)}>
           <Pressable style={[styles.modalContent, { paddingBottom: 24 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Send Feedback</Text>
@@ -751,8 +760,9 @@ export default function ProfileTabScreen() {
             </TouchableOpacity>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
