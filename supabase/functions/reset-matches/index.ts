@@ -47,7 +47,6 @@ type Profile = {
   personality: string[] | null; // answers to lib/personality.ts's 4 questions, same index order
   year_in_school: string | null;
   is_active: boolean;
-  fcm_token: string | null; // actually holds an Expo push token, see notes
 };
 
 type UniversityConfig = {
