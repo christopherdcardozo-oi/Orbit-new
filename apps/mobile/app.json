@@ -108,6 +108,7 @@
         }
       ],
       "expo-status-bar",
+      "./plugins/with-android-notification-channel-merge.js",
       [
         "expo-notifications",
         {
