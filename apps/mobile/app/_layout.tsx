@@ -8,6 +8,8 @@ import { registerForPushNotificationsAsync } from '../lib/notifications'
 import { attachPushRouting } from '../lib/pushRouting'
 import * as webPush from '../lib/webPush'
 import { useIsStandalone } from '../lib/useIsStandalone'
+import ErrorBoundary from '../components/ErrorBoundary'
+import { installErrorReporting } from '../lib/errorReporting'
 import InstallHint from '../components/InstallHint'
 import UpdateBanner from '../components/UpdateBanner'
 
@@ -18,6 +20,11 @@ import UpdateBanner from '../components/UpdateBanner'
 // auto-prompt per browser so we ask once, right after signing in, instead
 // of relying on someone finding the toggle themselves.
 const AUTO_PUSH_PROMPT_KEY = 'orbit-auto-push-prompted'
+
+// Installed at module scope so handlers are live before the first
+// render — a crash during initial mount is exactly the one worth
+// catching, and a useEffect would be too late.
+installErrorReporting()
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
@@ -234,6 +241,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={CustomDarkTheme}>
       <SafeAreaProvider>
+      <ErrorBoundary>
       <View style={styles.rootContainer}>
         <View style={[styles.appContainer, isWeb && styles.webContainer]}>
           <InstallHint />
@@ -241,6 +249,7 @@ export default function RootLayout() {
           <Slot />
         </View>
       </View>
+      </ErrorBoundary>
       </SafeAreaProvider>
     </ThemeProvider>
   )

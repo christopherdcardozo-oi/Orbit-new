@@ -6,6 +6,7 @@
 
 import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Modal, Alert, Switch, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import { confirm, notify } from '../../lib/confirm';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,34 +80,30 @@ export default function AdminUsers() {
 
   const toggleFlag = async (row: Detail, next: boolean) => {
     const { error } = await supabase.from('profiles').update({ flagged: next }).eq('id', row.id);
-    if (error) { Alert.alert('Failed', error.message); return; }
+    if (error) { notify('Failed', error.message); return; }
     setDetail({ ...row, flagged: next });
     setResults((prev) => prev.map((r) => (r.id === row.id ? { ...r, flagged: next } : r)));
   };
 
-  const confirmBan = (row: Detail) => {
-    Alert.alert(
-      `Ban ${row.display_alias}?`,
-      'This sets their account inactive — they can no longer sign in or be matched. Reversible from here.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Ban',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', row.id);
-            if (error) { Alert.alert('Failed', error.message); return; }
-            setDetail({ ...row, is_active: false });
-            setResults((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_active: false } : r)));
-          },
-        },
-      ],
-    );
+  const confirmBan = async (row: Detail) => {
+    // Was an Alert.alert with the ban inside onPress — a no-op on web,
+    // so banning from a browser silently did nothing.
+    const ok = await confirm({
+      title: `Ban ${row.display_alias}?`,
+      message: 'This sets their account inactive — they can no longer sign in or be matched. Reversible from here.',
+      confirmLabel: 'Ban',
+      destructive: true,
+    });
+    if (!ok) return;
+    const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', row.id);
+    if (error) { notify('Failed', error.message); return; }
+    setDetail({ ...row, is_active: false });
+    setResults((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_active: false } : r)));
   };
 
   const unban = async (row: Detail) => {
     const { error } = await supabase.from('profiles').update({ is_active: true }).eq('id', row.id);
-    if (error) { Alert.alert('Failed', error.message); return; }
+    if (error) { notify('Failed', error.message); return; }
     setDetail({ ...row, is_active: true });
     setResults((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_active: true } : r)));
   };
@@ -124,7 +121,7 @@ export default function AdminUsers() {
     setDeleteBusy(true);
     const { error } = await supabase.rpc('admin_delete_user', { p_user_id: deleteTarget.id });
     setDeleteBusy(false);
-    if (error) { Alert.alert('Failed', error.message); return; }
+    if (error) { notify('Failed', error.message); return; }
     setResults((prev) => prev.filter((r) => r.id !== deleteTarget.id));
     closeDeleteModal();
     setDetail(null);

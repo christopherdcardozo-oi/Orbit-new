@@ -6,6 +6,7 @@
 // close that gap.
 
 import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
+import { signOutEverywhere } from '../lib/auth';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -15,7 +16,7 @@ export default function Suspended() {
   const router = useRouter();
 
   const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await signOutEverywhere();
     if (error) {
       console.warn('Sign out failed:', error.message);
       return;

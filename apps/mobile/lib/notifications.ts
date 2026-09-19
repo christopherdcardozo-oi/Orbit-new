@@ -205,6 +205,35 @@ export async function registerForPushNotificationsAsync(): Promise<void> {
 }
 
 /**
+ * Drop this device's push registration.
+ *
+ * Must run BEFORE supabase.auth.signOut() — deleting the row needs the
+ * session that RLS checks against.
+ *
+ * Without this, signing out left device_push_tokens intact and the
+ * device kept receiving the previous user's match and message pushes.
+ * On a shared phone that means someone else's private notifications,
+ * and it persisted until a different account happened to register the
+ * same token and the onConflict upsert reassigned the row.
+ */
+export async function unregisterPushToken(): Promise<void> {
+  if (Platform.OS === 'web') return;
+
+  try {
+    const messaging = (await import('@react-native-firebase/messaging')).default;
+    const token = await messaging().getToken();
+    if (token) {
+      await supabase.from('device_push_tokens').delete().eq('token', token);
+    }
+    // Forces a new token next sign-in, so the old one can't be reused.
+    await messaging().deleteToken();
+  } catch (err) {
+    // Best-effort, same as registration: never block sign-out.
+    console.log('Push unregister skipped:', err);
+  }
+}
+
+/**
  * Kept as a stable no-op for backwards compatibility with the
  * previous savePushToken(userId, token) call site in _layout.tsx.
  * The registration now writes the row itself, so callers only need

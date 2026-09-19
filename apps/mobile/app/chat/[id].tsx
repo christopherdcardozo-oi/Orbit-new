@@ -298,6 +298,11 @@ export default function ChatScreen() {
   // Banner pulse in the last 10 min — subtle scale + opacity.
   const bannerPulse = useRef(new Animated.Value(1)).current
   const seenMessageIds = useRef(new Set<string>())
+  // Mirrors userId for the realtime handlers. Keeping userId in the
+  // channel effect's deps meant the channel was torn down and rebuilt
+  // the moment getUser() resolved, and any message inserted in that gap
+  // was lost with nothing to reconcile it.
+  const userIdRef = useRef<string | null>(null)
 
   // Menu (three-dot) + Report modal + Block confirmation.
   const [menuOpen, setMenuOpen] = useState(false)
@@ -338,8 +343,17 @@ export default function ChatScreen() {
 
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        // Was a bare `return`, which left `loading` true forever — an
+        // expired session meant staring at the skeleton with no way
+        // out. The root layout redirects on a null session; this just
+        // makes sure the screen isn't stuck if that hasn't happened yet.
+        setNotFound(true)
+        setLoading(false)
+        return
+      }
       setUserId(user.id)
+      userIdRef.current = user.id
 
       const { data: matchRow, error: matchError } = await supabase
         .from('matches')
@@ -355,11 +369,21 @@ export default function ChatScreen() {
       }
 
       const partnerId = matchRow.user1_id === user.id ? matchRow.user2_id : matchRow.user1_id
-      const { data: partner } = await supabase
-        .from('profiles')
-        .select('display_alias, avatar, major, year_in_school, personality, hobbies, activities')
-        .eq('id', partnerId)
-        .single()
+      // Via RPC rather than selecting from profiles directly: migration
+      // 059 drops the policies that exposed a partner's whole row (see
+      // that file for what was readable). This returns display fields
+      // only, with the membership check inside the function.
+      const { data: partnerRows } = await supabase
+        .rpc('get_partner_profiles', { p_match_ids: [id] })
+      const partner = (partnerRows ?? [])[0] as {
+        display_alias: string | null
+        avatar: string | null
+        major: string | null
+        year_in_school: string | null
+        personality: string[] | null
+        hobbies: string[] | null
+        activities: string[] | null
+      } | undefined
 
       setMatch({
         id: matchRow.id,
@@ -468,7 +492,7 @@ export default function ChatScreen() {
           // We're already looking at this chat, so the moment a partner's
           // message lands it's effectively read — stamp it immediately
           // instead of waiting for the next screen-open.
-          if (newMsg.sender_id !== userId) {
+          if (newMsg.sender_id !== userIdRef.current) {
             supabase
               .from('messages')
               .update({ read_at: new Date().toISOString() })
@@ -487,12 +511,30 @@ export default function ChatScreen() {
           )
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        // Anything inserted between mount and SUBSCRIBED never produced
+        // an event for us. Re-fetch once the socket is live and append
+        // whatever we haven't already seen; seenMessageIds makes this
+        // idempotent against the initial load and optimistic sends.
+        if (status !== 'SUBSCRIBED') return
+        supabase
+          .from('messages')
+          .select('id, match_id, sender_id, content, created_at, read_at')
+          .eq('match_id', id)
+          .order('created_at', { ascending: true })
+          .then(({ data, error }) => {
+            if (error || !data) return
+            const missed = data.filter((m) => !seenMessageIds.current.has(m.id))
+            if (missed.length === 0) return
+            for (const m of missed) seenMessageIds.current.add(m.id)
+            setMessages((prev) => [...prev, ...missed])
+          })
+      })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [id, userId])
+  }, [id])
 
   // ---------- Realtime: match expiring while chatting ----------
 

@@ -12,6 +12,8 @@ import * as webPush from '../../lib/webPush';
 import { hasPushPermission, requestPushPermission, registerForPushNotificationsAsync } from '../../lib/notifications';
 import { useIsStandalone } from '../../lib/useIsStandalone';
 import { getCurrentBuildId, isUpdateAvailable } from '../../lib/versionCheck';
+import { confirm, notify } from '../../lib/confirm';
+import { signOutEverywhere } from '../../lib/auth';
 
 const YEAR_ITEMS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'].map((y) => ({ label: y, value: y }))
 
@@ -89,18 +91,18 @@ export default function ProfileTabScreen() {
     if (!result.ok) {
       const reason = result.reason;
       if (reason === 'denied') {
-        Alert.alert(
+        notify(
           'Notifications blocked',
           Platform.OS === 'web'
             ? 'You blocked notifications for this site. Enable them in your browser site settings, then try again.'
             : 'Notifications are blocked in your device settings.',
         );
       } else if (reason === 'unsupported') {
-        Alert.alert('Not supported', 'This browser does not support notifications.');
+        notify('Not supported', 'This browser does not support notifications.');
       } else if (reason === 'no-vapid-key') {
-        Alert.alert('Not configured', 'Notification keys are missing on this build.');
+        notify('Not configured', 'Notification keys are missing on this build.');
       } else {
-        Alert.alert('Something went wrong', 'Please try again.');
+        notify('Something went wrong', 'Please try again.');
       }
     }
   };
@@ -260,7 +262,7 @@ export default function ProfileTabScreen() {
     if (navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(text);
-        Alert.alert('Link copied', 'Share it with a friend from your campus.');
+        notify('Link copied', 'Share it with a friend from your campus.');
         return;
       } catch { /* fallthrough */ }
     }
@@ -350,7 +352,7 @@ export default function ProfileTabScreen() {
     // for a user that's already gone) stayed on screen even after the
     // root layout had already navigated away underneath it.
     setShowSettings(false);
-    const { error } = await supabase.auth.signOut();
+    const { error } = await signOutEverywhere();
     if (error) {
       // Alert.alert is a silent no-op on web in some RN-web versions —
       // don't rely on it as the only signal. Logging keeps this
@@ -375,22 +377,32 @@ export default function ProfileTabScreen() {
     }
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account", 
-      "Are you absolutely sure? This will permanently erase your cosmic existence.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: async () => {
-            const { error } = await supabase.rpc('delete_my_account');
-            if (error) {
-              Alert.alert("Error", error.message);
-            } else {
-              await supabase.auth.signOut();
-            }
-        }}
-      ]
-    );
+  const handleDeleteAccount = async () => {
+    // This is the flow Apple requires under 5.1.1(v), and it did
+    // nothing at all on web: the rpc call lived inside an Alert.alert
+    // button callback, and react-native-web's Alert.alert is an empty
+    // function. Tapping Delete Account in a browser was a no-op.
+    const ok = await confirm({
+      title: 'Delete Account',
+      message: 'Are you absolutely sure? This will permanently erase your cosmic existence.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+
+    const { error } = await supabase.rpc('delete_my_account');
+    if (error) {
+      notify('Error', error.message);
+      return;
+    }
+    await supabase.auth.signOut();
+    if (Platform.OS === 'web') {
+      // Same reasoning as handleSignOut: a hard reload avoids racing
+      // the root layout's session-driven redirect.
+      window.location.href = '/';
+    } else {
+      router.replace('/');
+    }
   };
 
   const setPersonalityAnswer = (index: number, answer: string) => {

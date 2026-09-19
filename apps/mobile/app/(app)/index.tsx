@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Platform, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Alert, Modal, Share } from 'react-native';
+import { notify } from '../../lib/confirm';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -106,12 +107,12 @@ export default function ChatTabScreen() {
       return;
     }
 
-    const partnerId = match.user1_id === uid ? match.user2_id : match.user1_id;
-    const { data: partner } = await supabase
-      .from('profiles')
-      .select('display_alias, avatar')
-      .eq('id', partnerId)
-      .single();
+    // RPC instead of a direct profiles select — migration 059 removed
+    // the policies that let a partner read the entire row.
+    const { data: partnerRows } = await supabase
+      .rpc('get_partner_profiles', { p_match_ids: [match.id] });
+    const partner = (partnerRows ?? [])[0] as
+      { display_alias: string | null; avatar: string | null } | undefined;
 
     setActiveMatch({
       id: match.id,
@@ -149,16 +150,18 @@ export default function ChatTabScreen() {
     const unrated = expired.filter((m) => !ratedIds.has(m.id)).slice(0, 2);
     if (unrated.length === 0) { setRateableMatches([]); return; }
 
-    const partnerIds = unrated.map((m) => (m.user1_id === uid ? m.user2_id : m.user1_id));
+    // Same RPC, batched: it takes an array and returns one row per
+    // match, so the rating cards resolve in a single call.
     const { data: partners } = await supabase
-      .from('profiles')
-      .select('id, display_alias')
-      .in('id', partnerIds);
-    const nameById = new Map((partners ?? []).map((p) => [p.id, p.display_alias || 'Mystery Connection']));
+      .rpc('get_partner_profiles', { p_match_ids: unrated.map((m) => m.id) });
+    const nameByMatch = new Map(
+      ((partners ?? []) as { match_id: string; display_alias: string | null }[])
+        .map((p) => [p.match_id, p.display_alias || 'Mystery Connection']),
+    );
 
     setRateableMatches(unrated.map((m) => ({
       id: m.id,
-      partnerAlias: nameById.get(m.user1_id === uid ? m.user2_id : m.user1_id) || 'Mystery Connection',
+      partnerAlias: nameByMatch.get(m.id) || 'Mystery Connection',
     })));
   }, []);
 
@@ -214,7 +217,7 @@ export default function ChatTabScreen() {
     if (navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(text);
-        Alert.alert('Link copied', 'Share it with a friend from your campus.');
+        notify('Link copied', 'Share it with a friend from your campus.');
         return;
       } catch { /* fall through */ }
     }
