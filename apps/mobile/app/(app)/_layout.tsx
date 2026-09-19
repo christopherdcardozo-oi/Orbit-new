@@ -1,8 +1,19 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AppLayout() {
+  // Android 15 forces edge-to-edge for targetSdk 35+ (and
+  // android/gradle.properties sets edgeToEdgeEnabled=true), so the bar
+  // sits over the gesture area. react-navigation normally adds
+  // insets.bottom to both the height and the padding, but the literal
+  // `height` in styles.tabBar below overrode the height while leaving
+  // the inset padding in place — on a gesture-nav device that squeezed
+  // both icons into the top ~22dp of a 70dp bar. iOS is left alone: 88
+  // already accounts for the home indicator and looks correct today.
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = Platform.OS === 'ios' ? 88 : 70 + insets.bottom;
   return (
     <View style={{ flex: 1, backgroundColor: '#030712' }}>
       <Tabs
@@ -25,7 +36,13 @@ export default function AppLayout() {
           // (confirmed by forcing it bright red: nothing showed; zIndex/
           // elevation didn't fix it either — not a simple sibling z-order
           // fight). Normal document flow guarantees real, visible space.
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [
+            styles.tabBar,
+            Platform.OS === 'android' && {
+              height: tabBarHeight,
+              paddingBottom: insets.bottom,
+            },
+          ],
           tabBarActiveTintColor: '#c084fc',
           tabBarInactiveTintColor: '#6b7280',
           tabBarShowLabel: false,

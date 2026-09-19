@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -33,6 +34,7 @@ type FeedbackRow = {
 };
 
 export default function AdminFeedback() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const scope = useAdminScope();
   const campusOptions = useCampusOptions(scope.adminCampuses);
@@ -96,7 +98,7 @@ export default function AdminFeedback() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={() => router.push('/admin')} hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color="#fff" />
         </TouchableOpacity>
@@ -166,7 +168,7 @@ const styles = StyleSheet.create({
   centered: { justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12,
+    paddingHorizontal: 16, paddingBottom: 12,
   },
   headerTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
   toggleText: { color: '#c084fc', fontSize: 13, fontWeight: '600' },

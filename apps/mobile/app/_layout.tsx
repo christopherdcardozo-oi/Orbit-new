@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Slot, useRouter, useSegments, ThemeProvider, DarkTheme } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { registerForPushNotificationsAsync } from '../lib/notifications'
+import { attachPushRouting } from '../lib/pushRouting'
 import * as webPush from '../lib/webPush'
 import { useIsStandalone } from '../lib/useIsStandalone'
 import InstallHint from '../components/InstallHint'
@@ -26,6 +28,15 @@ export default function RootLayout() {
   // matchmaker's pool; they could still fully sign in and use the app.
   // This flag + the redirect below is what actually closes that gap.
   const [isActive, setIsActive] = useState<boolean | null>(null)
+  // Path from a tapped notification, held until the router and the
+  // session are both ready — at cold start the tap resolves well before
+  // either, and navigating early just loses the destination to the auth
+  // redirect below.
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null)
+  // onAuthStateChange fires for INITIAL_SESSION, TOKEN_REFRESHED and
+  // friends, not just sign-in. Registration was re-running on every one
+  // of them, stacking a fresh onTokenRefresh listener each time.
+  const registeredFor = useRef<string | null>(null)
   const segments = useSegments()
   const router = useRouter()
   const isStandalone = useIsStandalone()
@@ -55,16 +66,44 @@ export default function RootLayout() {
     }
   }, [])
 
-  const setupPushNotifications = async (_userId: string) => {
+  const setupPushNotifications = async (userId: string) => {
     // Registration handles the DB upsert internally now (previously
     // this passed the token back through savePushToken). Firebase
     // messaging replaces the old Expo push token flow.
+    if (registeredFor.current === userId) return
+    registeredFor.current = userId
     try {
       await registerForPushNotificationsAsync()
     } catch (e) {
+      registeredFor.current = null
       console.log('Error setting up push notifications', e)
     }
   }
+
+  // Notification taps. Web is already handled inside public/sw.js.
+  useEffect(() => {
+    if (Platform.OS === 'web') return
+    let unsubscribe: (() => void) | undefined
+    let cancelled = false
+    attachPushRouting((path) => setPendingRoute(path)).then((off) => {
+      if (cancelled) off()
+      else unsubscribe = off
+    })
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
+  }, [])
+
+  // Apply a held notification route once there's somewhere to go.
+  useEffect(() => {
+    if (!pendingRoute) return
+    if (!initialized || !session) return
+    if (isActive === false) return
+    const path = pendingRoute
+    setPendingRoute(null)
+    router.push(path as never)
+  }, [pendingRoute, initialized, session, isActive])
 
   const checkActive = async (userId: string) => {
     const { data, error } = await supabase
@@ -194,6 +233,7 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={CustomDarkTheme}>
+      <SafeAreaProvider>
       <View style={styles.rootContainer}>
         <View style={[styles.appContainer, isWeb && styles.webContainer]}>
           <InstallHint />
@@ -201,6 +241,7 @@ export default function RootLayout() {
           <Slot />
         </View>
       </View>
+      </SafeAreaProvider>
     </ThemeProvider>
   )
 }

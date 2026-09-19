@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable, KeyboardAvoidingView, Share } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, Modal, Platform, Linking, Switch, Pressable, KeyboardAvoidingView, Share, AppState } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import Dropdown from '../../components/Dropdown';
 import { PERSONALITY_QUESTIONS } from '../../lib/personality';
 import { HOBBIES, ACTIVITIES } from '../../lib/interests';
 import * as webPush from '../../lib/webPush';
+import { hasPushPermission, requestPushPermission, registerForPushNotificationsAsync } from '../../lib/notifications';
 import { useIsStandalone } from '../../lib/useIsStandalone';
 import { getCurrentBuildId, isUpdateAvailable } from '../../lib/versionCheck';
 
@@ -298,6 +299,47 @@ export default function ProfileTabScreen() {
     }
     setFeedbackMessage('');
     setFeedbackStatus({ kind: 'ok', text: 'Thanks! Your feedback was sent.' });
+  };
+
+  // Native notification state. Until now this whole settings row was
+  // web-only, so a user who tapped "Don't Allow" on the iOS/Android
+  // prompt had no way back: no toggle, no link to Settings, and pushes
+  // silently never arrived again. The OS won't re-prompt once denied,
+  // so the only real remedy is to send them to the system settings page.
+  const [nativePushOn, setNativePushOn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let alive = true;
+    const refresh = () => {
+      hasPushPermission().then((on) => { if (alive) setNativePushOn(on); });
+    };
+    refresh();
+    // Re-check on resume: granting permission happens in the Settings
+    // app, so the answer changes while we're backgrounded.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => { alive = false; sub.remove(); };
+  }, []);
+
+  const handleNativePushToggle = async () => {
+    if (Platform.OS === 'web') return;
+    if (nativePushOn) {
+      // Neither platform lets an app revoke its own notification
+      // permission — Settings is the only place that can.
+      Linking.openSettings();
+      return;
+    }
+    const granted = await requestPushPermission();
+    if (granted) {
+      setNativePushOn(true);
+      await registerForPushNotificationsAsync();
+      return;
+    }
+    // Declined now, or previously declined and the OS refused to ask
+    // again. Either way Settings is the way out.
+    Linking.openSettings();
   };
 
   const handleSignOut = async () => {
@@ -641,6 +683,31 @@ export default function ProfileTabScreen() {
                 {pushPermission === 'unsupported' && (
                   <Text style={styles.notifHint}>
                     This browser doesn't support notifications.
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {Platform.OS !== 'web' && (
+              <View style={styles.notifBlock}>
+                <View style={styles.notifMainRow}>
+                  <Ionicons name="notifications-outline" size={24} color="#fff" />
+                  <Text style={styles.modalButtonText}>Notifications</Text>
+                  <View style={{ flex: 1 }} />
+                  {nativePushOn === null ? (
+                    <ActivityIndicator color="#c084fc" />
+                  ) : (
+                    <Switch
+                      value={nativePushOn}
+                      onValueChange={handleNativePushToggle}
+                      trackColor={{ false: '#374151', true: '#9333ea' }}
+                      thumbColor="#fff"
+                    />
+                  )}
+                </View>
+                {nativePushOn === false && (
+                  <Text style={styles.notifHint}>
+                    Off — you won't be told when you match or get a message.
                   </Text>
                 )}
               </View>

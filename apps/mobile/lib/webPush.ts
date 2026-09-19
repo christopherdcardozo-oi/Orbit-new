@@ -57,11 +57,15 @@ export async function hasActiveSubscription(): Promise<boolean> {
 }
 
 // VAPID keys are base64url-encoded; pushManager.subscribe needs Uint8Array.
-function urlBase64ToUint8Array(base64: string): Uint8Array {
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
   const raw = atob(b64);
-  const arr = new Uint8Array(raw.length);
+  // Backed by an explicit ArrayBuffer: a bare `new Uint8Array(n)` is typed
+  // Uint8Array<ArrayBufferLike>, which TS won't accept as the BufferSource
+  // that pushManager.subscribe's applicationServerKey requires (ArrayBufferLike
+  // admits SharedArrayBuffer). This was the one standing tsc error.
+  const arr = new Uint8Array(new ArrayBuffer(raw.length));
   for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
   return arr;
 }
