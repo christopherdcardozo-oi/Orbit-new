@@ -1,35 +1,40 @@
--- 064 — Load a real wordlist into blocked_terms.
+-- 064 — Load a curated blocklist of objectionable terms.
 --
--- 056 shipped the filtering mechanism with a 21-word starter list of
--- ordinary profanity and no slurs at all. Hate speech is the actual
--- concern behind App Store guideline 1.2, so that starter list did not
--- back the claim we make to App Review.
+-- 056 shipped the filtering mechanism with a 21-word starter list that
+-- was mostly ordinary profanity and contained no slurs. That is
+-- backwards: App Store guideline 1.2 is about objectionable content —
+-- slurs, hate speech, sexual violence — not swearing.
 --
 -- Source: LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words,
 -- `en` file (403 entries), curated rather than loaded wholesale:
 --
 --   * 127 multi-word or punctuated entries dropped. blocked_terms is
---     single-token by CHECK constraint, and mask_blocked_terms matches
---     one token at a time between Postgres word boundaries.
---   * 34 entries removed as unsafe or noisy to block:
---       - identity terms. Masking these would censor students
---         describing themselves, on an app with an Identity field.
---         Slurs aimed at those same groups are kept.
---       - clinical/anatomical words. "breast cancer" and "sex
---         education" are not objectionable content.
---       - everyday collisions a campus chat would hit constantly:
---         garden hoe, Wang as a surname, "that sucks", and "xx",
---         which is how people sign off a message.
+--     single-token by CHECK constraint and the matcher works one token
+--     at a time between Postgres word boundaries.
+--   * identity terms removed. Masking those would censor students
+--     describing themselves on an app with an Identity field. Slurs
+--     aimed at those same groups are kept.
+--   * clinical and anatomical words removed. "breast cancer" and "sex
+--     education" are not objectionable content.
+--   * everyday collisions removed: garden hoe, Wang as a surname,
+--     "that sucks", and "xx", which is how people sign off a message.
+--   * 25 ordinary profanity terms removed. Orbit is a college chat
+--     app; students swear, and asterisking "fuck this exam" reads as a
+--     bug rather than as moderation. Nothing in 1.2 asks for it.
 --   * 9 major slurs added that the source list omits entirely.
 --
---   -> 249 terms, on top of the 21 seeded by 056.
+--   -> 224 terms.
 --
--- Word boundaries mean the short entries are safe: "ass" does not fire
--- on assignment, class or pass. Verified against those cases in 056.
+-- Deliberately still blocked despite sounding like profanity: cunt,
+-- whore, slut. These are used to demean a person rather than as casual
+-- swearing. Move them out if you disagree — it's one DELETE.
 --
--- Tune from real data, not guesswork. public.moderation_events records
--- every mask, so a term that fires on innocent messages shows up there
--- and can be deleted from this table with no code change.
+-- Word boundaries keep the short entries safe: nothing here fires on
+-- assignment, class or pass.
+--
+-- Tune from data, not guesswork. moderation_events records every mask,
+-- so a term that trips on innocent messages shows up there and can be
+-- deleted from this table with no code change and no deploy.
 
 INSERT INTO public.blocked_terms (term) VALUES
     ('2g1c'),
@@ -37,8 +42,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('anal'),
     ('anilingus'),
     ('apeshit'),
-    ('ass'),
-    ('asshole'),
     ('assmunch'),
     ('autoerotic'),
     ('babeland'),
@@ -46,7 +49,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('bangbus'),
     ('bareback'),
     ('barenaked'),
-    ('bastard'),
     ('bastardo'),
     ('bastinado'),
     ('bbw'),
@@ -57,17 +59,11 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('bestiality'),
     ('bimbos'),
     ('birdlock'),
-    ('bitch'),
-    ('bitches'),
     ('blowjob'),
     ('blumpkin'),
-    ('bollocks'),
     ('boner'),
-    ('boob'),
-    ('boobs'),
     ('bukkake'),
     ('bulldyke'),
-    ('bullshit'),
     ('bunghole'),
     ('busty'),
     ('buttcheeks'),
@@ -81,15 +77,12 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('circlejerk'),
     ('clit'),
     ('clusterfuck'),
-    ('cock'),
-    ('cocks'),
     ('coon'),
     ('coons'),
     ('coprolagnia'),
     ('coprophilia'),
     ('cornhole'),
     ('creampie'),
-    ('cum'),
     ('cumming'),
     ('cumshot'),
     ('cumshots'),
@@ -99,7 +92,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('daterape'),
     ('deepthroat'),
     ('dendrophilia'),
-    ('dick'),
     ('dildo'),
     ('dingleberries'),
     ('dingleberry'),
@@ -126,11 +118,8 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('fisting'),
     ('footjob'),
     ('frotting'),
-    ('fuck'),
     ('fuckin'),
-    ('fucking'),
     ('fucktards'),
-    ('fudgepacker'),
     ('futanari'),
     ('gangbang'),
     ('goatcx'),
@@ -146,14 +135,12 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('hentai'),
     ('homoerotic'),
     ('honkey'),
-    ('horny'),
     ('incest'),
     ('intercourse'),
     ('jailbait'),
     ('jigaboo'),
     ('jiggaboo'),
     ('jiggerboo'),
-    ('jizz'),
     ('juggs'),
     ('kike'),
     ('kinbaku'),
@@ -168,7 +155,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('milf'),
     ('molester'),
     ('mong'),
-    ('motherfucker'),
     ('muffdiving'),
     ('nambla'),
     ('nawashi'),
@@ -205,7 +191,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('pthc'),
     ('pubes'),
     ('punany'),
-    ('pussy'),
     ('queaf'),
     ('queef'),
     ('quim'),
@@ -228,9 +213,7 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('sexually'),
     ('shemale'),
     ('shibari'),
-    ('shit'),
     ('shitblimp'),
-    ('shitty'),
     ('shota'),
     ('shrimping'),
     ('skeet'),
@@ -255,13 +238,11 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('titties'),
     ('titty'),
     ('topless'),
-    ('tosser'),
     ('towelhead'),
     ('tranny'),
     ('tribadism'),
     ('tubgirl'),
     ('tushy'),
-    ('twat'),
     ('twink'),
     ('twinkie'),
     ('undressing'),
@@ -273,7 +254,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('voyeur'),
     ('voyeurweb'),
     ('voyuer'),
-    ('wank'),
     ('wetback'),
     ('whore'),
     ('worldsex'),
@@ -282,5 +262,10 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('yiffy'),
     ('zoophilia')
 ON CONFLICT DO NOTHING;
+
+-- Drop the casual profanity 056 seeded.
+DELETE FROM public.blocked_terms WHERE term IN (
+    'asshole', 'bastard', 'bitch', 'bullshit', 'cock', 'dick', 'douchebag', 'fuck', 'fucker', 'fucking', 'motherfucker', 'pussy', 'shit'
+);
 
 SELECT count(*) AS total_terms FROM public.blocked_terms;
