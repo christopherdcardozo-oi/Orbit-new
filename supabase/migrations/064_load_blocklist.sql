@@ -18,12 +18,12 @@
 --     education" are not objectionable content.
 --   * everyday collisions removed: garden hoe, Wang as a surname,
 --     "that sucks", and "xx", which is how people sign off a message.
---   * 25 ordinary profanity terms removed. Orbit is a college chat
+--   * 38 ordinary profanity terms removed, variants included. Orbit is a college chat
 --     app; students swear, and asterisking "fuck this exam" reads as a
 --     bug rather than as moderation. Nothing in 1.2 asks for it.
 --   * 9 major slurs added that the source list omits entirely.
 --
---   -> 224 terms.
+--   -> 211 terms.
 --
 -- Deliberately still blocked despite sounding like profanity: cunt,
 -- whore, slut. These are used to demean a person rather than as casual
@@ -41,15 +41,12 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('acrotomophilia'),
     ('anal'),
     ('anilingus'),
-    ('apeshit'),
-    ('assmunch'),
     ('autoerotic'),
     ('babeland'),
     ('bangbros'),
     ('bangbus'),
     ('bareback'),
     ('barenaked'),
-    ('bastardo'),
     ('bastinado'),
     ('bbw'),
     ('bdsm'),
@@ -75,8 +72,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('chink'),
     ('cialis'),
     ('circlejerk'),
-    ('clit'),
-    ('clusterfuck'),
     ('coon'),
     ('coons'),
     ('coprolagnia'),
@@ -118,8 +113,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('fisting'),
     ('footjob'),
     ('frotting'),
-    ('fuckin'),
-    ('fucktards'),
     ('futanari'),
     ('gangbang'),
     ('goatcx'),
@@ -145,7 +138,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('kike'),
     ('kinbaku'),
     ('kinkster'),
-    ('knobbing'),
     ('livesex'),
     ('lolita'),
     ('lovemaking'),
@@ -177,8 +169,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('pedophile'),
     ('pegging'),
     ('pikey'),
-    ('pissing'),
-    ('pisspig'),
     ('playboy'),
     ('ponyplay'),
     ('poof'),
@@ -213,7 +203,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('sexually'),
     ('shemale'),
     ('shibari'),
-    ('shitblimp'),
     ('shota'),
     ('shrimping'),
     ('skeet'),
@@ -235,8 +224,6 @@ INSERT INTO public.blocked_terms (term) VALUES
     ('threesome'),
     ('throating'),
     ('thumbzilla'),
-    ('titties'),
-    ('titty'),
     ('topless'),
     ('towelhead'),
     ('tranny'),
@@ -265,7 +252,7 @@ ON CONFLICT DO NOTHING;
 
 -- Drop the casual profanity 056 seeded.
 DELETE FROM public.blocked_terms WHERE term IN (
-    'asshole', 'bastard', 'bitch', 'bullshit', 'cock', 'dick', 'douchebag', 'fuck', 'fucker', 'fucking', 'motherfucker', 'pussy', 'shit'
+    'apeshit', 'asshole', 'assmunch', 'bastard', 'bastardo', 'bitch', 'bullshit', 'clit', 'clusterfuck', 'cock', 'dick', 'douchebag', 'fuck', 'fucker', 'fuckin', 'fucking', 'fucktards', 'knobbing', 'motherfucker', 'pissing', 'pisspig', 'pussy', 'shit', 'shitblimp', 'titties', 'titty'
 );
 
 SELECT count(*) AS total_terms FROM public.blocked_terms;
