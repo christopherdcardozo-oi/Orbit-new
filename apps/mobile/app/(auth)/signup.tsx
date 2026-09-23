@@ -226,7 +226,14 @@ export default function SignupScreen() {
 
     const { error: updateError } = await supabase
       .from('profiles')
-      .update({ personality, hobbies, activities })
+      .update({
+        // Ticked the agreement checkbox on this form, so record it
+        // now and skip the post-sign-in gate in app/_layout.tsx.
+        terms_accepted_at: new Date().toISOString(),
+        personality,
+        hobbies,
+        activities,
+      })
       .eq('id', user.id)
 
     if (updateError) {

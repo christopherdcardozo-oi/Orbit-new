@@ -9,6 +9,7 @@ import { attachPushRouting } from '../lib/pushRouting'
 import * as webPush from '../lib/webPush'
 import { useIsStandalone } from '../lib/useIsStandalone'
 import ErrorBoundary from '../components/ErrorBoundary'
+import TermsGate from '../components/TermsGate'
 import { installErrorReporting } from '../lib/errorReporting'
 import InstallHint from '../components/InstallHint'
 import UpdateBanner from '../components/UpdateBanner'
@@ -40,6 +41,12 @@ export default function RootLayout() {
   // either, and navigating early just loses the destination to the auth
   // redirect below.
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
+  // null = unknown / no session. false = signed in but has never
+  // accepted the terms. Guideline 1.2 requires affirmative agreement,
+  // and the signup checkbox alone misses both the App Store reviewer
+  // (who signs in via login, never signup) and all pre-existing
+  // accounts.
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null)
   // onAuthStateChange fires for INITIAL_SESSION, TOKEN_REFRESHED and
   // friends, not just sign-in. Registration was re-running on every one
   // of them, stacking a fresh onTokenRefresh listener each time.
@@ -65,6 +72,7 @@ export default function RootLayout() {
         checkActive(session.user.id)
       } else {
         setIsActive(null)
+        setTermsAccepted(null)
       }
     })
 
@@ -115,7 +123,7 @@ export default function RootLayout() {
   const checkActive = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('is_active')
+      .select('is_active, terms_accepted_at')
       .eq('id', userId)
       .maybeSingle()
     if (error) {
@@ -126,6 +134,9 @@ export default function RootLayout() {
       return
     }
     setIsActive(data?.is_active ?? true)
+    // Undefined (row not readable yet) is treated as accepted so a
+    // transient read failure can't lock anyone out of the app.
+    setTermsAccepted(data ? data.terms_accepted_at != null : true)
   }
 
   // Web push: auto-prompt once per browser, right after we know
@@ -246,7 +257,14 @@ export default function RootLayout() {
         <View style={[styles.appContainer, isWeb && styles.webContainer]}>
           <InstallHint />
           <UpdateBanner />
-          <Slot />
+          {session?.user && termsAccepted === false && isActive !== false ? (
+            <TermsGate
+              userId={session.user.id}
+              onAccepted={() => setTermsAccepted(true)}
+            />
+          ) : (
+            <Slot />
+          )}
         </View>
       </View>
       </ErrorBoundary>
