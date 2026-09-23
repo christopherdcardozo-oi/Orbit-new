@@ -520,8 +520,9 @@ export default function ChatTabScreen() {
               <View style={styles.safetyBullets}>
                 <Text style={styles.safetyBullet}>• Don't share your address, class schedule, or where you'll be at a specific time.</Text>
                 <Text style={styles.safetyBullet}>• Use the <Text style={{ fontWeight: '700' }}>Share Contact</Text> button when you both want to swap Instagram/Snap/phone/email — it only reveals your info once they share theirs too.</Text>
-                <Text style={styles.safetyBullet}>• If something feels off, use <Text style={{ fontWeight: '700' }}>Report and Block</Text> in the chat menu. We review every report.</Text>
+                <Text style={styles.safetyBullet}>• If something feels off, use <Text style={{ fontWeight: '700' }}>Report and Block</Text> in the chat menu. Orbit has <Text style={{ fontWeight: '700' }}>zero tolerance</Text> for objectionable content or abusive users — every report is reviewed and acted on within 24 hours.</Text>
                 <Text style={styles.safetyBullet}>• You alone decide whether to meet in person. Meet somewhere public if you do.</Text>
+                <Text style={styles.safetyBullet}>• You can delete any message you sent by holding it. To reach us directly, use <Text style={{ fontWeight: '700' }}>Contact Support</Text> in Settings.</Text>
               </View>
               <Text style={styles.safetyLegal}>
                 By continuing, you agree that Orbit is not responsible for anything shared or arranged with your match.

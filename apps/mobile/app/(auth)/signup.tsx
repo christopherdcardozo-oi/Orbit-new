@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Linking } from 'react-native'
 import { Link, useRouter, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
-import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 import SpamHint from '../../components/SpamHint'
 import Dropdown from '../../components/Dropdown'
@@ -75,6 +75,11 @@ export default function SignupScreen() {
   // True only for the "you already have an account" case, so we can
   // offer a direct link to login instead of a dead end.
   const [accountExists, setAccountExists] = useState(false)
+  // App Store rejection 2026-09-23, guideline 1.2: Apple requires users
+  // to actively AGREE to terms that state there's no tolerance for
+  // objectionable content or abusive users. The previous passive
+  // "By continuing you agree" line doesn't count as agreement.
+  const [termsAccepted, setTermsAccepted] = useState(false)
 
   const handleSendCode = async () => {
     setErrorMessage('')
@@ -359,23 +364,34 @@ export default function SignupScreen() {
                 </View>
               ) : null}
 
-              <TouchableOpacity style={styles.button} onPress={handleSendCode} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Verification Code</Text>}
+              <TouchableOpacity
+                style={styles.eulaRow}
+                onPress={() => setTermsAccepted((v) => !v)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: termsAccepted }}
+                accessibilityLabel="Agree to the Terms of Service and Privacy Policy"
+              >
+                <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+                  {termsAccepted ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
+                </View>
+                <Text style={styles.eulaText}>
+                  I agree to the{' '}
+                  <Text style={styles.legalLink} onPress={() => Linking.openURL('https://orghubs.com/apps/orbit/terms')}>Terms of Service</Text>
+                  {' '}and{' '}
+                  <Text style={styles.legalLink} onPress={() => Linking.openURL('https://orghubs.com/apps/orbit/privacy')}>Privacy Policy</Text>
+                  , and I understand Orbit has{' '}
+                  <Text style={styles.eulaStrong}>zero tolerance for objectionable content or abusive users</Text>.
+                  Reported content is reviewed and acted on within 24 hours.
+                </Text>
               </TouchableOpacity>
 
-              {/* Consent notice — visible before the user submits their
-                  email. Now points at the canonical hosted copies at
-                  orghubs.com/apps/orbit/{terms,privacy} — one source of
-                  truth for App Store / Play Store compliance, and Apple's
-                  and Google's own scan bots read those exact URLs from
-                  the store listing too. */}
-              <Text style={styles.legalNotice}>
-                By continuing you agree to our{' '}
-                <Text style={styles.legalLink} onPress={() => Linking.openURL('https://orghubs.com/apps/orbit/terms')}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={styles.legalLink} onPress={() => Linking.openURL('https://orghubs.com/apps/orbit/privacy')}>Privacy Policy</Text>
-                .
-              </Text>
+              <TouchableOpacity
+                style={[styles.button, !termsAccepted && styles.buttonDisabled]}
+                onPress={handleSendCode}
+                disabled={loading || !termsAccepted}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Verification Code</Text>}
+              </TouchableOpacity>
             </>
           )}
 
@@ -655,6 +671,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  eulaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 16, paddingRight: 4 },
+  checkbox: {
+    width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#4b5563',
+    alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  checkboxChecked: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
+  eulaText: { flex: 1, color: '#9ca3af', fontSize: 12, lineHeight: 18 },
+  eulaStrong: { color: '#e5e7eb', fontWeight: '700' },
+  buttonDisabled: { opacity: 0.45 },
   legalNotice: {
     color: '#6b7280',
     fontSize: 12,

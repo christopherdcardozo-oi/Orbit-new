@@ -743,6 +743,17 @@ export default function ProfileTabScreen() {
 
             <TouchableOpacity
               style={styles.modalButton}
+              onPress={() => {
+                setShowSettings(false);
+                Linking.openURL('mailto:support@orghubs.com?subject=Orbit%20-%20report%20inappropriate%20activity');
+              }}
+            >
+              <Ionicons name="mail-outline" size={24} color="#fff" />
+              <Text style={styles.modalButtonText}>Contact Support</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButton}
               onPress={() => { setShowSettings(false); Linking.openURL('https://orghubs.com/apps/orbit/privacy'); }}
             >
               <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />

@@ -23,6 +23,7 @@ import CosmicBackground from '../../components/CosmicBackground'
 import Skeleton from '../../components/Skeleton'
 import Dropdown from '../../components/Dropdown'
 import { supabase } from '../../lib/supabase'
+import { confirm, notify } from '../../lib/confirm'
 import { PERSONALITY_QUESTIONS } from '../../lib/personality'
 
 type Message = {
@@ -32,6 +33,7 @@ type Message = {
   content: string
   created_at: string
   read_at: string | null
+  deleted_at: string | null
 }
 
 type HandleType = 'instagram' | 'snapchat' | 'phone' | 'email' | 'other'
@@ -402,7 +404,7 @@ export default function ChatScreen() {
 
       const { data: existingMessages } = await supabase
         .from('messages')
-        .select('id, match_id, sender_id, content, created_at, read_at')
+        .select('id, match_id, sender_id, content, created_at, read_at, deleted_at')
         .eq('match_id', id)
         .order('created_at', { ascending: true })
 
@@ -507,7 +509,11 @@ export default function ChatScreen() {
         (payload) => {
           const updated = payload.new as Message
           setMessages((prev) =>
-            prev.map((m) => (m.id === updated.id ? { ...m, read_at: updated.read_at } : m))
+            prev.map((m) =>
+              m.id === updated.id
+                ? { ...m, read_at: updated.read_at, deleted_at: updated.deleted_at }
+                : m,
+            ),
           )
         }
       )
@@ -519,7 +525,7 @@ export default function ChatScreen() {
         if (status !== 'SUBSCRIBED') return
         supabase
           .from('messages')
-          .select('id, match_id, sender_id, content, created_at, read_at')
+          .select('id, match_id, sender_id, content, created_at, read_at, deleted_at')
           .eq('match_id', id)
           .order('created_at', { ascending: true })
           .then(({ data, error }) => {
@@ -942,7 +948,7 @@ export default function ChatScreen() {
     const { data: inserted, error } = await supabase
       .from('messages')
       .insert({ match_id: id, sender_id: userId, content })
-      .select('id, match_id, sender_id, content, created_at, read_at')
+      .select('id, match_id, sender_id, content, created_at, read_at, deleted_at')
       .single()
     if (error) {
       console.warn('Failed to send message:', error)
@@ -953,6 +959,38 @@ export default function ChatScreen() {
     }
     setSending(false)
   }, [userId, id, isActive, sendTyping])
+
+  // Guideline 1.2 requires "a mechanism for users to immediately remove
+  // posts". There's no feed here, so the equivalent is letting the
+  // author take their own message back. Soft delete (061) — the row
+  // stays so admins can still read reported content.
+  const deleteMessage = useCallback(async (message: Message) => {
+    const ok = await confirm({
+      title: 'Delete message?',
+      message: 'It will be removed for both of you. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+
+    const deletedAt = new Date().toISOString()
+    // Optimistic: the realtime UPDATE will confirm it for both sides.
+    setMessages((prev) =>
+      prev.map((m) => (m.id === message.id ? { ...m, deleted_at: deletedAt } : m)),
+    )
+    const { error } = await supabase
+      .from('messages')
+      .update({ deleted_at: deletedAt })
+      .eq('id', message.id)
+    if (error) {
+      // Put it back rather than leaving a message that looks deleted
+      // but isn't.
+      setMessages((prev) =>
+        prev.map((m) => (m.id === message.id ? { ...m, deleted_at: null } : m)),
+      )
+      notify('Could not delete', error.message)
+    }
+  }, [])
 
   const handleSend = useCallback(() => {
     const content = inputText.trim()
@@ -1274,12 +1312,29 @@ export default function ChatScreen() {
                     lets each child size to its own content instead, so
                     the bubble's width depends only on the message. */}
                 <View style={{ maxWidth: '78%', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
-                  <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                    <Text style={styles.bubbleText}>{item.content}</Text>
-                  </View>
+                  {item.deleted_at ? (
+                    <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs, styles.bubbleDeleted]}>
+                      <Text style={styles.bubbleDeletedText}>Message deleted</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      activeOpacity={isMine ? 0.7 : 1}
+                      onLongPress={isMine ? () => deleteMessage(item) : undefined}
+                      delayLongPress={400}
+                      accessibilityRole={isMine ? 'button' : undefined}
+                      accessibilityLabel={isMine ? 'Your message. Long press to delete.' : undefined}
+                    >
+                      <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                        <Text style={styles.bubbleText}>{item.content}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
                   <Text style={[styles.timestamp, isMine ? styles.timestampMine : styles.timestampTheirs]}>
-                    Sent {formatTime(item.created_at)}
-                    {isMine && item.read_at ? ` · Read ${formatTime(item.read_at)}` : ''}
+                    {item.deleted_at
+                      ? 'Deleted'
+                      : `Sent ${formatTime(item.created_at)}`}
+                    {!item.deleted_at && isMine && item.read_at ? ` · Read ${formatTime(item.read_at)}` : ''}
+                    {!item.deleted_at && isMine ? ' · Hold to delete' : ''}
                   </Text>
                 </View>
               </View>
@@ -1389,6 +1444,7 @@ export default function ChatScreen() {
         <Pressable style={styles.menuBackdrop} onPress={() => setReportOpen(false)}>
           <Pressable style={[styles.menuSheet, { padding: 20 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>Report and Block {match.partnerAlias}</Text>
+            <Text style={styles.sheetSubtitle}>Zero tolerance: we review every report and act within 24 hours, removing content and ejecting abusive users.</Text>
             <Text style={styles.sheetSubtitle}>
               We'll review this and you two will never match again. Thanks for keeping Orbit safe.
             </Text>
@@ -1860,6 +1916,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#374151',
   },
+  bubbleDeleted: { opacity: 0.6 },
+  bubbleDeletedText: { color: '#9ca3af', fontSize: 15, fontStyle: 'italic' },
   bubbleText: {
     color: '#fff',
     fontSize: 15,
