@@ -1,5 +1,10 @@
 # Orbit
 
+> **Picking this up mid-flight?** Read [docs/HANDOFF.md](docs/HANDOFF.md)
+> first. It covers the current App Store / Play review state, which
+> migrations are applied, one that is deliberately reverted, and the
+> outstanding work.
+
 One codebase, three targets:
 
 - **iOS** — via `eas build --platform ios` (Apple App Store submissions)
