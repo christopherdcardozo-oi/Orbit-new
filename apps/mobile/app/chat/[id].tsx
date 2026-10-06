@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
+  Keyboard,
   View,
   Text,
   StyleSheet,
@@ -17,7 +18,7 @@ import {
   Linking,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import CosmicBackground from '../../components/CosmicBackground'
 import Skeleton from '../../components/Skeleton'
@@ -305,6 +306,30 @@ export default function ChatScreen() {
   // the moment getUser() resolved, and any message inserted in that gap
   // was lost with nothing to reconcile it.
   const userIdRef = useRef<string | null>(null)
+
+  // Composer spacing. Two things were pushing it off the keyboard and
+  // they stacked:
+  //
+  //  1. keyboardVerticalOffset={90} below. That number is for when a
+  //     React Navigation header sits ABOVE the KeyboardAvoidingView and
+  //     the KAV's frame starts at the top of the screen. Here
+  //     headerShown is false and the KAV already begins below the
+  //     custom header, so the 90 was pure over-correction.
+  //  2. SafeAreaView edges included 'bottom', reserving the home
+  //     indicator inset permanently. While the keyboard is up it
+  //     already covers that strip, so the reservation became dead space.
+  //
+  // Now: offset 0, SafeAreaView handles the top only, and the composer
+  // takes the bottom inset itself, but only while the keyboard is down.
+  const insets = useSafeAreaInsets()
+  const [keyboardUp, setKeyboardUp] = useState(false)
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const show = Keyboard.addListener(showEvt, () => setKeyboardUp(true))
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardUp(false))
+    return () => { show.remove(); hide.remove() }
+  }, [])
 
   // Menu (three-dot) + Report modal + Block confirmation.
   const [menuOpen, setMenuOpen] = useState(false)
@@ -1060,7 +1085,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <CosmicBackground />
 
       {/* Header */}
@@ -1264,7 +1289,7 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={0}
       >
         {/* Messages column disintegrates first: bubbles fade + drift
             upward as one block. Header, warning banner, and composer
@@ -1353,7 +1378,7 @@ export default function ChatScreen() {
         </Animated.View>
 
         {/* Composer */}
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: 12 + (keyboardUp ? 0 : insets.bottom) }]}>
           <TextInput
             style={[styles.composerInput, !isActive && styles.composerInputDisabled]}
             placeholder={isActive ? 'Type a message…' : 'This connection has expired'}
