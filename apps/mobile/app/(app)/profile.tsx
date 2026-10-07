@@ -221,16 +221,6 @@ export default function ProfileTabScreen() {
     }
   };
 
-  // Was a direct Stripe tip link — now points at Christopher's own hosted
-  // bio + Homeward/Orbit projects page, which itself has a donate link.
-  // Same button (icon, label "About the Dev"), one indirection more before
-  // reaching Stripe, but way more context for someone who taps it curious
-  // about who made the app.
-  const ABOUT_DEV_URL = 'https://orghubs.com/dev/christopher';
-  const handleAboutDev = () => {
-    Linking.openURL(ABOUT_DEV_URL);
-  };
-
   // Both native/web branches below were previously gated on
   // `Platform.OS === 'web'`, so on iOS/Android neither ever ran and every
   // tap fell straight through to the mailto: fallback — "Invite a Campus
@@ -620,9 +610,6 @@ export default function ProfileTabScreen() {
           <Ionicons name="share-social" size={18} color="#c084fc" />
           <Text style={styles.inviteButtonText}>Invite a Campus Bud</Text>
         </TouchableOpacity>
-        {/* "Tip the Dev" moved into the Settings modal — sat next to
-            the invite button here before but competed with it for
-            attention on the primary screen. */}
       </ScrollView>
 
       {/* Settings Modal */}
@@ -731,14 +718,6 @@ export default function ProfileTabScreen() {
             >
               <Ionicons name="chatbubble-ellipses-outline" size={24} color="#fff" />
               <Text style={styles.modalButtonText}>Send Feedback</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => { setShowSettings(false); handleAboutDev(); }}
-            >
-              <Ionicons name="heart-outline" size={24} color="#f472b6" />
-              <Text style={[styles.modalButtonText, { color: '#f472b6' }]}>About the Dev</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -899,19 +878,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700', color: '#fff', marginBottom: 4 },
   subtitle: { fontSize: 16, color: '#9ca3af', textTransform: 'capitalize' },
   card: { backgroundColor: 'rgba(17, 24, 39, 0.6)', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#1f2937', marginBottom: 24 },
-  tipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(244, 114, 182, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(244, 114, 182, 0.3)',
-    borderRadius: 16,
-    paddingVertical: 14,
-    marginBottom: 60,
-  },
-  tipButtonText: { color: '#f472b6', fontSize: 15, fontWeight: '700' },
   inviteButton: {
     flexDirection: 'row',
     alignItems: 'center',
