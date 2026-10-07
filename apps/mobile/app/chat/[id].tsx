@@ -1630,7 +1630,7 @@ export default function ChatScreen() {
                     </Text>
                   )}
                   <TouchableOpacity
-                    style={[styles.sheetPrimaryBtn, { marginTop: 12 }, (revealBusy || !revealValue.trim()) && { opacity: 0.5 }]}
+                    style={[styles.sheetPrimaryBtn, { marginTop: 12, flex: 0 }, (revealBusy || !revealValue.trim()) && { opacity: 0.5 }]}
                     onPress={submitReveal}
                     disabled={revealBusy || !revealValue.trim()}
                   >
@@ -1640,7 +1640,7 @@ export default function ChatScreen() {
               )
             })()}
 
-            <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setRevealModalOpen(false)}>
+            <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16, flex: 0 }]} onPress={() => setRevealModalOpen(false)}>
               <Text style={styles.sheetCancelText}>Done</Text>
             </TouchableOpacity>
           </Pressable>
@@ -1707,7 +1707,7 @@ export default function ChatScreen() {
               }
             />
 
-            <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16 }]} onPress={() => setProfileModalOpen(false)}>
+            <TouchableOpacity style={[styles.sheetCancelBtn, { marginTop: 16, flex: 0 }]} onPress={() => setProfileModalOpen(false)}>
               <Text style={styles.sheetCancelText}>Close</Text>
             </TouchableOpacity>
           </Pressable>
